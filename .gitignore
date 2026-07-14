@@ -1,0 +1,41 @@
+# Node.js dependencies
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Next.js local env files
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Next.js build cache and telemetry
+frontend/.next/
+frontend/.vercel/
+
+# Python dependencies and environments
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+env/
+.env
+backend/.env
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*.docx
+*.tmp
+*.log
+
+# ML training models and datasets (large files)
+ml/model/
+dataset/*.csv
