@@ -247,7 +247,7 @@ export default function Home() {
 
               <div className="hidden md:flex items-center gap-4">
                 <a 
-                  href="https://github.com" 
+                  href="https://github.com/Chiragbangera-codes/signlanguage-translater" 
                   target="_blank" 
                   rel="noopener noreferrer" 
                   className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors flex items-center justify-center"

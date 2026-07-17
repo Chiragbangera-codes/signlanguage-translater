@@ -86,6 +86,9 @@ export const CameraCard: React.FC = () => {
   // Main frame processing loop ref to resolve accessed-before-declaration warnings
   const processVideoFrameRef = useRef<() => void>(() => {});
 
+  // Stable ref so MediaPipe never needs to be re-initialized when the callback changes
+  const onHandResultsRef = useRef<(results: any) => void>(() => {});
+
   // Update loop callback reference whenever FPS settings updates
   useEffect(() => {
     processVideoFrameRef.current = async () => {
@@ -179,28 +182,47 @@ export const CameraCard: React.FC = () => {
     let leftHandCoords = Array(63).fill(-1.0);
     let rightHandCoords = Array(63).fill(-1.0);
 
-    for (let i = 0; i < landmarksList.length; i++) {
-      const landmarks = landmarksList[i];
-      const handedness = handednessList[i];
+    const numHands = landmarksList.length;
+    const usesTwoHands = numHands >= 2 ? 1.0 : 0.0;
 
+    if (numHands === 1) {
+      // Single hand detected: always route the active hand coordinates to the leftHandCoords slot
+      // to match the training dataset structure (active hand in left_hand, right_hand padded with -1.0)
+      const landmarks = landmarksList[0];
       const flatCoords: number[] = [];
       for (const lm of landmarks) {
         flatCoords.push(lm.x, lm.y, lm.z);
       }
+      leftHandCoords = flatCoords;
+    } else if (numHands >= 2) {
+      // Two hands detected: swap the labels because MediaPipe handedness is reversed (input image to MediaPipe is not mirrored)
+      for (let i = 0; i < numHands; i++) {
+        const landmarks = landmarksList[i];
+        const handedness = handednessList[i];
 
-      // Fill coordinate bins matching anatomical side labels
-      if (handedness.label === "Left") {
-        leftHandCoords = flatCoords;
-      } else if (handedness.label === "Right") {
-        rightHandCoords = flatCoords;
+        const flatCoords: number[] = [];
+        for (const lm of landmarks) {
+          flatCoords.push(lm.x, lm.y, lm.z);
+        }
+
+        const label: string =
+          handedness?.classification?.[0]?.label ?? handedness?.label ?? "";
+
+        console.log("[HandednessDebug] raw handedness object:", JSON.stringify(handedness), "→ resolved label:", label);
+
+        if (label === "Right") {
+          // MediaPipe "Right" hand (non-mirrored) is physically Left hand -> route to leftHandCoords
+          leftHandCoords = flatCoords;
+        } else if (label === "Left") {
+          // MediaPipe "Left" hand (non-mirrored) is physically Right hand -> route to rightHandCoords
+          rightHandCoords = flatCoords;
+        }
       }
     }
 
-    const usesTwoHands = landmarksList.length >= 2 ? 1.0 : 0.0;
-
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiBase}/api/v1/predict`, {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+      const response = await fetch(`${apiBase}/predict`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -301,6 +323,11 @@ export const CameraCard: React.FC = () => {
     }
   }, [setPrediction, setStatusBarMessage, executeInference]);
 
+  // Keep the ref in sync with the latest callback version — no effect teardown needed
+  useEffect(() => {
+    onHandResultsRef.current = onHandResults;
+  }, [onHandResults]);
+
   const stopCameraAndLoop = useCallback(() => {
     // 1. Stop animation loop
     if (animationFrameRef.current) {
@@ -370,7 +397,8 @@ export const CameraCard: React.FC = () => {
     }
   }, [setWebcamActive, setStatusBarMessage]);
 
-  // Initialize MediaPipe Hands on client mount
+  // Initialize MediaPipe Hands ONCE on client mount.
+  // Uses a stable wrapper ref so the callback can update without re-running this effect.
   useEffect(() => {
     let active = true;
 
@@ -402,7 +430,9 @@ export const CameraCard: React.FC = () => {
           minTrackingConfidence: 0.6
         });
 
-        hands.onResults(onHandResults);
+        // Register a STABLE wrapper so this effect never needs to re-run when the callback changes.
+        // onHandResultsRef.current always points to the latest version of onHandResults.
+        hands.onResults((results: any) => onHandResultsRef.current(results));
         handsRef.current = hands;
         console.log("[CameraCard] MediaPipe Hands package initialized dynamically.");
         setStatusBarMessage("System Ready. Connect webcam to start translation.");
@@ -418,7 +448,8 @@ export const CameraCard: React.FC = () => {
       active = false;
       stopCameraAndLoop();
     };
-  }, [isTranslating, stopCameraAndLoop, onHandResults, setStatusBarMessage]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount only — stopCameraAndLoop called via cleanup
 
   // Handle webcam activation / deactivation
   useEffect(() => {

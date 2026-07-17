@@ -47,6 +47,15 @@ async def predict_gesture(payload: PredictionRequest):
         right_hand_raw = np.array(payload.right_hand, dtype=np.float64)
         uses_two_hands = float(payload.uses_two_hands)
 
+        # DEBUG: log whether hands have real data or are padded
+        left_is_empty = np.allclose(left_hand_raw, -1.0)
+        right_is_empty = np.allclose(right_hand_raw, -1.0)
+        logger.info(f"[DEBUG] uses_two_hands={uses_two_hands}, left_empty={left_is_empty}, right_empty={right_is_empty}")
+        if not left_is_empty:
+            logger.info(f"[DEBUG] left_hand wrist (first 3): {left_hand_raw[:3]}")
+        if not right_is_empty:
+            logger.info(f"[DEBUG] right_hand wrist (first 3): {right_hand_raw[:3]}")
+
         # 2. Apply instance-wise normalization matching the training pipeline exactly
         left_hand_norm = normalize_hand(left_hand_raw)
         right_hand_norm = normalize_hand(right_hand_raw)
@@ -59,6 +68,7 @@ async def predict_gesture(payload: PredictionRequest):
 
         # 4. Run model prediction
         probs = model_loader.predict(features)
+        logger.info(f"[DEBUG] top-3 raw probs: {sorted(enumerate(probs), key=lambda x: -x[1])[:3]}")
 
         # 5. Extract top predictions (class probabilities)
         # Sort classes in descending order of probabilities
