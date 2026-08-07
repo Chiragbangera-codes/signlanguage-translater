@@ -11,7 +11,8 @@ export const PredictionCard: React.FC = () => {
     processingTimeMs,
     isTranslating,
     cameraFps,
-    apiHealthy
+    apiHealthy,
+    activeMode
   } = useTranslatorStore();
 
   return (
@@ -22,6 +23,7 @@ export const PredictionCard: React.FC = () => {
         <div className="flex items-center gap-2">
           <Brain className="h-4.5 w-4.5 text-violet-400" />
           <span className="text-sm font-semibold text-zinc-300">Live Inference HUD</span>
+          <span className={`text-xs font-bold ${activeMode === "numbers" ? "text-emerald-400" : "text-sky-400"}`}>— {activeMode === "numbers" ? "Numbers" : "Words"}</span>
         </div>
         {isTranslating && (
           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-violet-500/10 border border-violet-500/20 text-violet-300 animate-pulse">
@@ -72,7 +74,9 @@ export const PredictionCard: React.FC = () => {
         </div>
         <div className="flex justify-between pt-1">
           <span className="text-zinc-600">Model:</span>
-          <span className="text-zinc-300 font-bold">{isTranslating ? "Active" : "Idle"}</span>
+          <span className="text-zinc-300 font-bold">
+            {activeMode === "numbers" ? "Numbers (digits)" : "Words (alphabet)"}
+          </span>
         </div>
       </div>
 

@@ -25,7 +25,7 @@ for path in env_paths:
         break
 
 DEFAULT_MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
-DEFAULT_MODEL_SAVE_PATH = os.path.join(DEFAULT_MODEL_DIR, "sign_speak_model.keras")
+DEFAULT_MODEL_SAVE_PATH = os.path.join(DEFAULT_MODEL_DIR, "sign_speak_lstm.keras")
 MODEL_SAVE_PATH = os.getenv("MODEL_SAVE_PATH", DEFAULT_MODEL_SAVE_PATH)
 
 DEFAULT_LABEL_ENCODER_PATH = os.path.join(DEFAULT_MODEL_DIR, "label_encoder.pkl")
@@ -52,17 +52,28 @@ def evaluate_model():
         raise FileNotFoundError(f"Preprocessed dataset splits not found at: {DEFAULT_DATASET_PATH}")
     data = np.load(DEFAULT_DATASET_PATH)
     X_test, y_test = data['X_test'], data['y_test']
+    if X_test.ndim != 3:
+        raise ValueError(
+            "Expected test sequences shaped (samples, frames, features), "
+            f"got {X_test.shape}. Run preprocess.py again if needed."
+        )
 
     print(f"Loading model from: {MODEL_SAVE_PATH}...")
     if not os.path.exists(MODEL_SAVE_PATH):
         raise FileNotFoundError(f"Model file not found at: {MODEL_SAVE_PATH}")
     model = tf.keras.models.load_model(MODEL_SAVE_PATH)
+    if tuple(model.input_shape[1:]) != tuple(X_test.shape[1:]):
+        raise ValueError(
+            f"Model expects sequences shaped {model.input_shape[1:]}, "
+            f"but the test data has shape {X_test.shape[1:]}."
+        )
 
     print(f"Loading label encoder from: {LABEL_ENCODER_PATH}...")
     if not os.path.exists(LABEL_ENCODER_PATH):
         raise FileNotFoundError(f"Label encoder not found at: {LABEL_ENCODER_PATH}")
     with open(LABEL_ENCODER_PATH, "rb") as f:
         le = pickle.load(f)
+    class_names = [str(label) for label in le.classes_]
 
     print("Running predictions on test set...")
     predictions = model.predict(X_test)
@@ -71,7 +82,7 @@ def evaluate_model():
     # Compute metrics
     acc = accuracy_score(y_test, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(y_test, y_pred, average='weighted')
-    report = classification_report(y_test, y_pred, target_names=[chr(65 + int(c)) for c in le.classes_])
+    report = classification_report(y_test, y_pred, target_names=class_names)
     cm = confusion_matrix(y_test, y_pred)
 
     print("\n" + "=" * 60)
@@ -87,7 +98,7 @@ def evaluate_model():
     print("=" * 60)
 
     # Plot and save confusion matrix
-    plot_confusion_matrix(cm, [chr(65 + int(c)) for c in le.classes_])
+    plot_confusion_matrix(cm, class_names)
 
     # Load comparison details if exist
     comparison_path = os.path.join(DEFAULT_MODEL_DIR, "architectures_comparison.json")

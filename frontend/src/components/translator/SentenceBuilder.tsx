@@ -1,6 +1,7 @@
 import React from "react";
 import { Volume2, Archive, Trash2, AlignLeft } from "lucide-react";
 import { useTranslatorStore } from "../../store/useTranslatorStore";
+import { speakSentence } from "../../lib/speech";
 
 export const SentenceBuilder: React.FC = () => {
   const { 
@@ -16,19 +17,7 @@ export const SentenceBuilder: React.FC = () => {
     if (!constructedSentence.trim()) return;
     
     if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel(); // Cancel any ongoing speech
-      const utterance = new SpeechSynthesisUtterance(constructedSentence.toLowerCase());
-      
-      // Find and assign the selected speech voice
-      const voices = window.speechSynthesis.getVoices();
-      const targetVoice = voices.find(v => v.name === selectedVoiceName);
-      if (targetVoice) {
-        utterance.voice = targetVoice;
-      }
-      
-      utterance.rate = speechRate;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
+      speakSentence(constructedSentence, selectedVoiceName, speechRate);
       setStatusBarMessage("Synthesizing speech output...");
     } else {
       setStatusBarMessage("Speech synthesis is not supported on this browser.");

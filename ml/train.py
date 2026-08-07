@@ -7,7 +7,7 @@ import tensorflow as tf
 from dotenv import load_dotenv
 from tensorflow.keras import Sequential
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from tensorflow.keras.layers import Dense, Dropout, Input
+from tensorflow.keras.layers import Dense, Dropout, Input, LSTM
 
 # Load env variables
 env_paths = [
@@ -20,7 +20,7 @@ for path in env_paths:
         break
 
 DEFAULT_MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
-DEFAULT_MODEL_SAVE_PATH = os.path.join(DEFAULT_MODEL_DIR, "sign_speak_model.keras")
+DEFAULT_MODEL_SAVE_PATH = os.path.join(DEFAULT_MODEL_DIR, "sign_speak_lstm.keras")
 MODEL_SAVE_PATH = os.getenv("MODEL_SAVE_PATH", DEFAULT_MODEL_SAVE_PATH)
 
 DEFAULT_METADATA_PATH = os.path.join(DEFAULT_MODEL_DIR, "training_metadata.json")
@@ -45,131 +45,46 @@ def load_preprocessed_data(path=DEFAULT_DATASET_PATH):
         data['X_test'], data['y_test']
     )
 
-def create_model_a() -> Sequential:
-    """Simple MLP Model Architecture (Model A)"""
+def create_lstm_model(input_shape: tuple[int, int] = (30, 127), num_classes: int = 10) -> Sequential:
+    """Creates an LSTM classifier for landmark sequences."""
     model = Sequential([
-        Input(shape=(127,)),
-        Dense(64, activation='relu'),
-        Dropout(0.1),
-        Dense(32, activation='relu'),
-        Dense(26, activation='softmax')
-    ], name="Simple_MLP_Model_A")
-    return model
-
-def create_model_b() -> Sequential:
-    """Medium MLP Model Architecture (Model B)"""
-    model = Sequential([
-        Input(shape=(127,)),
-        Dense(128, activation='relu'),
+        Input(shape=input_shape),
+        LSTM(64, return_sequences=False),
         Dropout(0.2),
         Dense(64, activation='relu'),
         Dropout(0.2),
-        Dense(32, activation='relu'),
-        Dense(26, activation='softmax')
-    ], name="Medium_MLP_Model_B")
-    return model
-
-def create_model_c() -> Sequential:
-    """Complex MLP Model Architecture (Model C)"""
-    model = Sequential([
-        Input(shape=(127,)),
-        Dense(256, activation='relu'),
-        Dropout(0.2),
-        Dense(128, activation='relu'),
-        Dropout(0.2),
-        Dense(64, activation='relu'),
-        Dropout(0.2),
-        Dense(32, activation='relu'),
-        Dense(26, activation='softmax')
-    ], name="Complex_MLP_Model_C")
+        Dense(num_classes, activation='softmax')
+    ], name="SignSpeak_LSTM")
     return model
 
 def train_and_compare():
-    """Trains and compares three models, selects the best-performing model,
-
-    and saves model checkpoints and training charts.
-    """
+    """Trains the LSTM model, saves checkpoints and training charts."""
     os.makedirs(DEFAULT_MODEL_DIR, exist_ok=True)
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 
     print("Loading preprocessed splits...")
     X_train, y_train, X_val, y_val, X_test, y_test = load_preprocessed_data()
 
-    architectures = [
-        ("Model A (Simple)", create_model_a),
-        ("Model B (Medium)", create_model_b),
-        ("Model C (Complex)", create_model_c)
-    ]
+    if X_train.ndim != 3 or X_val.ndim != 3 or X_test.ndim != 3:
+        raise ValueError(
+            "Expected preprocessed sequences shaped (samples, frames, features). "
+            f"Received train={X_train.shape}, validation={X_val.shape}, test={X_test.shape}."
+        )
+    if X_train.shape[1:] != X_val.shape[1:] or X_train.shape[1:] != X_test.shape[1:]:
+        raise ValueError("Train, validation, and test sequences must use the same shape.")
 
-    results = {}
-    best_val_accuracy = -1.0
-    best_model_name = ""
-    best_model_fn = None
+    input_shape = X_train.shape[1:]
+    num_classes = len(np.unique(np.concatenate((y_train, y_val, y_test))))
 
     epochs = 20
     batch_size = 64
 
     print("\n" + "=" * 60)
-    print("             MLP MODEL COMPARISON TRAINING")
+    print("             LSTM MODEL TRAINING")
     print("=" * 60)
 
-    for name, model_fn in architectures:
-        print(f"\n--- Training {name} ---")
-        model = model_fn()
-        model.compile(
-            optimizer='adam',
-            loss='sparse_categorical_crossentropy',
-            metrics=['accuracy']
-        )
-
-        # Temp model checkpoint filepath
-        temp_chk_path = os.path.join(DEFAULT_MODEL_DIR, f"temp_{model.name}.keras")
-
-        callbacks = [
-            EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-            ModelCheckpoint(filepath=temp_chk_path, monitor='val_loss', save_best_only=True),
-            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, min_lr=1e-5)
-        ]
-
-        model.fit(
-            X_train, y_train,
-            epochs=epochs,
-            batch_size=batch_size,
-            validation_data=(X_val, y_val),
-            callbacks=callbacks,
-            verbose=1
-        )
-
-        # Evaluate validation performance
-        # Load the best weights from the temp checkpoint
-        if os.path.exists(temp_chk_path):
-            model = tf.keras.models.load_model(temp_chk_path)
-            # Remove temp checkpoint file
-            try:
-                os.remove(temp_chk_path)
-            except Exception:
-                pass
-
-        val_loss, val_acc = model.evaluate(X_val, y_val, verbose=0)
-        print(f"{name} Validation Accuracy: {val_acc:.4f}")
-        results[name] = {"val_acc": float(val_acc), "val_loss": float(val_loss)}
-
-        if val_acc > best_val_accuracy:
-            best_val_accuracy = val_acc
-            best_model_name = name
-            best_model_fn = model_fn
-
-    print("\n" + "=" * 60)
-    print(f"Winner Model: {best_model_name} (Val Accuracy: {best_val_accuracy:.4f})")
-    print("=" * 60)
-
-    # Save comparison results
-    with open(os.path.join(DEFAULT_MODEL_DIR, "architectures_comparison.json"), "w") as f:
-        json.dump(results, f, indent=4)
-
-    # Re-train or train final selected winner model to full convergence (more patience)
-    print(f"\nFinal training of winner architecture: {best_model_name}...")
-    final_model = best_model_fn()
+    print("\n--- Training LSTM model ---")
+    final_model = create_lstm_model(input_shape=input_shape, num_classes=num_classes)
     final_model.compile(
         optimizer='adam',
         loss='sparse_categorical_crossentropy',
@@ -194,7 +109,11 @@ def train_and_compare():
     # Save training history
     history_path = os.path.join(DEFAULT_MODEL_DIR, "training_history.json")
     with open(history_path, "w") as f:
-        json.dump(final_history.history, f, indent=4)
+        json.dump(
+            {metric: [float(value) for value in values] for metric, values in final_history.history.items()},
+            f,
+            indent=4,
+        )
 
     print(f"Model successfully trained and saved to: {MODEL_SAVE_PATH}")
     print(f"History successfully saved to: {history_path}")
@@ -202,7 +121,7 @@ def train_and_compare():
     # Plot curves
     plot_curves(final_history.history)
 
-    return final_model, final_history.history, best_model_name
+    return final_model, final_history.history, "LSTM"
 
 def plot_curves(history: dict):
     """Plots training/validation accuracy and loss curves."""

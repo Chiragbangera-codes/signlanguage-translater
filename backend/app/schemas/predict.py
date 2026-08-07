@@ -1,43 +1,40 @@
-from typing import List
+from typing import Annotated, List
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+SequenceFrame = Annotated[List[float], Field(min_length=127, max_length=127)]
 
 
 class PredictionRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "left_hand": [0.0] * 63,
-                "right_hand": [-1.0] * 63,
-                "uses_two_hands": 0.0
+                "sequence": [[0.0] + [0.0] * 63 + [-1.0] * 63] * 30,
+                "mode": "numbers"
             }
         }
     )
 
-    left_hand: List[float] = Field(
+    sequence: List[SequenceFrame] = Field(
         ...,
-        min_length=63,
-        max_length=63,
-        description="63 floating-point coordinates for left hand landmarks (21 landmarks * 3 coords x,y,z)"
+        min_length=30,
+        max_length=30,
+        description="Thirty landmark frames, each containing uses_two_hands followed by 63 left- and 63 right-hand coordinates."
     )
-    right_hand: List[float] = Field(
-        ...,
-        min_length=63,
-        max_length=63,
-        description="63 floating-point coordinates for right hand landmarks (21 landmarks * 3 coords x,y,z)"
-    )
-    uses_two_hands: float = Field(
-        ...,
-        description="Binary flag (1.0 if both hands are detected, 0.0 otherwise)"
+
+    mode: str = Field(
+        "numbers",
+        description="Inference mode: 'numbers' routes to the digit (0-9) model, 'words' routes to the alphabet model."
     )
 
 
 class PredictionItem(BaseModel):
-    label: str = Field(..., description="Predicted character (A-Z)")
+    label: str = Field(..., description="Predicted label (digit or alphabet letter)")
     confidence: float = Field(..., description="Confidence score in percentage (0-100)")
 
 class PredictionResponse(BaseModel):
-    prediction: str = Field(..., description="Top predicted sign alphabet letter")
+    prediction: str = Field(..., description="Top predicted label")
     confidence: float = Field(..., description="Main prediction confidence score (0-100)")
     processing_time_ms: float = Field(..., description="Inference and preprocessing execution time in milliseconds")
     top_predictions: List[PredictionItem] = Field(

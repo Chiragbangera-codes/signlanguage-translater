@@ -2,6 +2,7 @@ import React from "react";
 import { History, Play, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslatorStore } from "../../store/useTranslatorStore";
+import { speakSentence } from "../../lib/speech";
 
 export const HistoryPanel: React.FC = () => {
   const { 
@@ -14,18 +15,7 @@ export const HistoryPanel: React.FC = () => {
 
   const handleSpeakHistoryItem = (itemText: string) => {
     if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(itemText.toLowerCase());
-      
-      const voices = window.speechSynthesis.getVoices();
-      const targetVoice = voices.find(v => v.name === selectedVoiceName);
-      if (targetVoice) {
-        utterance.voice = targetVoice;
-      }
-      utterance.rate = speechRate;
-      utterance.pitch = 1.0;
-      
-      window.speechSynthesis.speak(utterance);
+      speakSentence(itemText, selectedVoiceName, speechRate);
       setStatusBarMessage(`Replaying archived speech: "${itemText}"`);
     }
   };

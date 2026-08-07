@@ -3,6 +3,8 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { VideoOff, WifiOff } from "lucide-react";
 import { useTranslatorStore } from "../../store/useTranslatorStore";
 
+const SEQUENCE_LENGTH = 30;
+
 // Draw hand joints & connection lines in canvas context (declared outside to remain pure)
 const drawHandSkeleton = (ctx: CanvasRenderingContext2D, landmarks: any[]) => {
   const width = ctx.canvas.width;
@@ -51,13 +53,13 @@ const drawHandSkeleton = (ctx: CanvasRenderingContext2D, landmarks: any[]) => {
 export const CameraCard: React.FC = () => {
   const { 
     webcamActive, 
-    isTranslating, 
     setWebcamActive, 
     setPrediction, 
     appendLetterToWord, 
     setStatusBarMessage,
     setCameraFps,
-    setApiHealthy
+    setApiHealthy,
+    activeMode
   } = useTranslatorStore();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -70,6 +72,7 @@ export const CameraCard: React.FC = () => {
   // Pipeline Performance and Stabilization Refs
   const lastPredictionTime = useRef<number>(0);
   const predictionBuffer = useRef<string[]>([]);
+  const landmarkSequence = useRef<number[][]>([]);
   
   // Hold detection and cooldown filters
   const lastAppendedLetter = useRef<string | null>(null);
@@ -173,7 +176,7 @@ export const CameraCard: React.FC = () => {
     }
   }, [appendLetterToWord, setStatusBarMessage]);
 
-  // Maps MediaPipe landmarks to 127 float format and makes API call
+  // Maps one MediaPipe result to a 127-value frame, then sends a 30-frame sequence.
   const executeInference = useCallback(async (results: any) => {
     const landmarksList = results.multiHandLandmarks || [];
     const handednessList = results.multiHandedness || [];
@@ -220,6 +223,22 @@ export const CameraCard: React.FC = () => {
       }
     }
 
+    const frame = [usesTwoHands, ...leftHandCoords, ...rightHandCoords];
+    landmarkSequence.current.push(frame);
+    if (landmarkSequence.current.length > SEQUENCE_LENGTH) {
+      landmarkSequence.current.shift();
+    }
+
+    if (landmarkSequence.current.length < SEQUENCE_LENGTH) {
+      setStatusBarMessage(`Capturing gesture: ${landmarkSequence.current.length}/${SEQUENCE_LENGTH} frames`);
+      return;
+    }
+
+    // A sequence is captured at camera frame rate; limit only the API requests.
+    const now = Date.now();
+    if (now - lastPredictionTime.current < 200) return;
+    lastPredictionTime.current = now;
+
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
       const response = await fetch(`${apiBase}/predict`, {
@@ -228,9 +247,8 @@ export const CameraCard: React.FC = () => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          left_hand: leftHandCoords,
-          right_hand: rightHandCoords,
-          uses_two_hands: usesTwoHands
+          sequence: landmarkSequence.current,
+          mode: activeMode
         })
       });
 
@@ -261,7 +279,7 @@ export const CameraCard: React.FC = () => {
       setPrediction(null, 0, [], 0);
       setApiHealthy(false);
     }
-  }, [setPrediction, setStatusBarMessage, setApiHealthy, runStabilizationPipeline]);
+  }, [setPrediction, setStatusBarMessage, setApiHealthy, runStabilizationPipeline, activeMode]);
 
   // MediaPipe Results Processing
   const onHandResults = useCallback(async (results: any) => {
@@ -311,15 +329,11 @@ export const CameraCard: React.FC = () => {
         // Clear majority state
         currentMajorityLetter.current = null;
         majorityLetterStartTime.current = 0;
+        landmarkSequence.current = [];
         return;
       }
 
-      // Throttle predictions (Max 5 requests per second / 200ms) to ensure smooth 30 FPS rendering
-      const now = Date.now();
-      if (now - lastPredictionTime.current >= 200) {
-        lastPredictionTime.current = now;
-        await executeInference(results);
-      }
+      await executeInference(results);
     }
   }, [setPrediction, setStatusBarMessage, executeInference]);
 
@@ -355,6 +369,7 @@ export const CameraCard: React.FC = () => {
     // 4. Reset prediction states
     setPrediction(null, 0, [], 0);
     predictionBuffer.current = [];
+    landmarkSequence.current = [];
     currentMajorityLetter.current = null;
     majorityLetterStartTime.current = 0;
     setCameraFps(0);

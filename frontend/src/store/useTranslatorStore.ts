@@ -5,6 +5,8 @@ export interface PredictionItem {
   confidence: number;
 }
 
+export type TranslatorMode = "numbers" | "words";
+
 interface TranslatorState {
   // Webcam & Pipeline status
   webcamActive: boolean;
@@ -28,6 +30,7 @@ interface TranslatorState {
   speechRate: number; // 0.5-2.0
   selectedVoiceName: string | null;
   cameraMirrored: boolean;
+  activeMode: TranslatorMode;
 
   // Performance stats state
   cameraFps: number;
@@ -59,6 +62,7 @@ interface TranslatorState {
   setSpeechRate: (val: number) => void;
   setSelectedVoiceName: (name: string | null) => void;
   setCameraMirrored: (val: boolean) => void;
+  setActiveMode: (mode: TranslatorMode) => void;
   setCameraFps: (fps: number) => void;
   setApiHealthy: (healthy: boolean) => void;
 }
@@ -88,6 +92,7 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
   speechRate: 1.0,
   selectedVoiceName: null,
   cameraMirrored: true,
+  activeMode: "numbers",
 
   // Performance stats
   cameraFps: 0,
@@ -167,6 +172,13 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
   setSpeechRate: (val) => set({ speechRate: val }),
   setSelectedVoiceName: (name) => set({ selectedVoiceName: name }),
   setCameraMirrored: (val) => set({ cameraMirrored: val }),
+  setActiveMode: (mode) => set({
+    activeMode: mode,
+    statusBarMessage:
+      mode === "numbers"
+        ? "Mode switched to Numbers (digits 0-9)."
+        : "Mode switched to Words (alphabet). The words model is not trained yet."
+  }),
   setCameraFps: (fps) => set({ cameraFps: fps }),
   setApiHealthy: (healthy) => set({ apiHealthy: healthy })
 }));

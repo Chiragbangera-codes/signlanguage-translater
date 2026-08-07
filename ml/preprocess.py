@@ -18,9 +18,7 @@ for path in env_paths:
         break
 
 DEFAULT_DATASET_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "dataset",
-    "Indian Sign Language Gesture Landmarks.csv"
+    os.path.dirname(os.path.dirname(__file__)), "dataset", "digits"
 )
 DATASET_PATH = os.getenv("DATASET_PATH", DEFAULT_DATASET_PATH)
 
@@ -60,44 +58,61 @@ def normalize_hand(landmarks_63: np.ndarray) -> np.ndarray:
     # Flatten back to 63 features
     return scaled.flatten()
 
-def preprocess_features(df: pd.DataFrame) -> np.ndarray:
-    """Applies hand normalization on left and right hand coordinates of the dataframe.
-    Returns a numpy array of shape (num_samples, 127).
-    """
-    num_samples = len(df)
-    processed_features = np.zeros((num_samples, 127))
+def load_sequence_dataset(path: str = DATASET_PATH) -> tuple[np.ndarray, np.ndarray]:
+    """Loads ``<label>/sequence_*.npy`` files from the collected sequence dataset."""
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"Sequence dataset directory not found: {path}")
 
-    # Feature columns mapping
-    left_hand_cols = [f"left_hand_{coord}_{i}" for i in range(21) for coord in ['x', 'y', 'z']]
-    right_hand_cols = [f"right_hand_{coord}_{i}" for i in range(21) for coord in ['x', 'y', 'z']]
+    sequences, labels = [], []
+    class_dirs = [entry for entry in os.scandir(path) if entry.is_dir()]
+    class_dirs.sort(key=lambda entry: (not entry.name.isdigit(), int(entry.name) if entry.name.isdigit() else entry.name))
 
-    # Extract raw data
-    left_hand_data = df[left_hand_cols].values
-    right_hand_data = df[right_hand_cols].values
-    uses_two_hands = df["uses_two_hands"].values
+    for class_dir in class_dirs:
+        for filename in sorted(os.listdir(class_dir.path)):
+            if not filename.endswith(".npy"):
+                continue
+            sequence = np.load(os.path.join(class_dir.path, filename)).astype(np.float32)
+            if sequence.ndim != 2 or sequence.shape[1] != 127:
+                raise ValueError(
+                    f"Expected a (frames, 127) sequence, got {sequence.shape} in "
+                    f"{os.path.join(class_dir.path, filename)}"
+                )
+            sequences.append(sequence)
+            labels.append(class_dir.name)
 
-    for i in range(num_samples):
-        # Normalize left hand
-        norm_left = normalize_hand(left_hand_data[i])
-        # Normalize right hand
-        norm_right = normalize_hand(right_hand_data[i])
+    if not sequences:
+        raise ValueError(f"No .npy sequence files found in: {path}")
 
-        # Concatenate: uses_two_hands (1), left_hand (63), right_hand (63)
-        processed_features[i, 0] = uses_two_hands[i]
-        processed_features[i, 1:64] = norm_left
-        processed_features[i, 64:127] = norm_right
+    frame_counts = {sequence.shape[0] for sequence in sequences}
+    if len(frame_counts) != 1:
+        raise ValueError(f"All sequences must have the same frame count; found {sorted(frame_counts)}")
 
-    return processed_features
+    return np.stack(sequences), np.asarray(labels)
 
-def preprocess_and_split(df: pd.DataFrame, test_size=0.1, val_size=0.1, random_state=42):
-    """Normalizes features, encodes labels, and splits dataset into Train, Val, and Test sets."""
-    print("Normalizing hand landmarks...")
-    X = preprocess_features(df)
+
+def preprocess_features(sequences: np.ndarray) -> np.ndarray:
+    """Normalizes both hands in every frame of ``(samples, frames, 127)`` data."""
+    if sequences.ndim != 3 or sequences.shape[2] != 127:
+        raise ValueError(f"Expected sequences shaped (samples, frames, 127), got {sequences.shape}")
+
+    processed = sequences.astype(np.float32, copy=True)
+    for sample_index, sequence in enumerate(processed):
+        for frame_index, frame in enumerate(sequence):
+            frame[1:64] = normalize_hand(frame[1:64])
+            frame[64:127] = normalize_hand(frame[64:127])
+            processed[sample_index, frame_index] = frame
+    return processed
+
+
+def preprocess_and_split(sequences: np.ndarray, labels: np.ndarray, test_size=0.1, val_size=0.1, random_state=42):
+    """Normalizes sequence data, encodes labels, and creates train/validation/test splits."""
+    print("Normalizing hand landmarks in sequences...")
+    X = preprocess_features(sequences)
 
     print("Encoding target labels...")
     # Clean label encoder
     le = LabelEncoder()
-    y = le.fit_transform(df["target"].astype(str))
+    y = le.fit_transform(labels.astype(str))
 
     # Save label encoder
     os.makedirs(os.path.dirname(LABEL_ENCODER_PATH), exist_ok=True)
@@ -120,13 +135,11 @@ def preprocess_and_split(df: pd.DataFrame, test_size=0.1, val_size=0.1, random_s
     return X_train, y_train, X_val, y_val, X_test, y_test, le
 
 if __name__ == "__main__":
-    from dataset import load_dataset
-
     try:
-        print(f"Loading raw dataset from {DATASET_PATH}...")
-        df = load_dataset()
+        print(f"Loading sequence dataset from {DATASET_PATH}...")
+        sequences, labels = load_sequence_dataset()
 
-        X_train, y_train, X_val, y_val, X_test, y_test, le = preprocess_and_split(df)
+        X_train, y_train, X_val, y_val, X_test, y_test, le = preprocess_and_split(sequences, labels)
 
         # Save preprocessed splits for Phase 2C decoupling
         npz_dir = os.path.dirname(DEFAULT_DATASET_PATH)
@@ -142,19 +155,19 @@ if __name__ == "__main__":
         print("\n" + "=" * 60)
         print("          PREPROCESSING REPORT STATISTICS")
         print("=" * 60)
-        print(f"Total Samples        : {len(df)}")
-        print(f"Training Set Size    : {X_train.shape[0]} ({X_train.shape[0]/len(df)*100:.1f}%)")
-        print(f"Validation Set Size  : {X_val.shape[0]} ({X_val.shape[0]/len(df)*100:.1f}%)")
-        print(f"Testing Set Size     : {X_test.shape[0]} ({X_test.shape[0]/len(df)*100:.1f}%)")
-        print(f"Feature Dimension    : {X_train.shape[1]}")
-        print(f"Label Encoding Classes: {len(le.classes_)} classes ({le.classes_})")
+        print(f"Total Sequences      : {len(sequences)}")
+        print(f"Training Set Size    : {X_train.shape[0]} ({X_train.shape[0]/len(sequences)*100:.1f}%)")
+        print(f"Validation Set Size  : {X_val.shape[0]} ({X_val.shape[0]/len(sequences)*100:.1f}%)")
+        print(f"Testing Set Size     : {X_test.shape[0]} ({X_test.shape[0]/len(sequences)*100:.1f}%)")
+        print(f"Sequence Shape       : {X_train.shape[1:]}")
+        print(f"Label Classes        : {len(le.classes_)} ({le.classes_})")
 
         # Verify missing-hand preservation
-        # Find a row where right hand is missing in X_train
-        missing_mask = (X_train[:, 0] == 0.0)
+        # Find a frame where the right hand is absent.
+        missing_mask = (X_train[:, :, 0] == 0.0)
         if np.any(missing_mask):
-            sample_idx = np.where(missing_mask)[0][0]
-            right_hand_sample = X_train[sample_idx, 64:127]
+            sample_idx, frame_idx = np.argwhere(missing_mask)[0]
+            right_hand_sample = X_train[sample_idx, frame_idx, 64:127]
             is_padded = np.all(right_hand_sample == -1.0)
             print(f"Missing hand check (-1.0 preserved in preprocessed splits): {is_padded}")
         else:

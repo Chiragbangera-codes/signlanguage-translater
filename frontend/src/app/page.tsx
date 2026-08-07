@@ -36,6 +36,7 @@ import { Controls } from "../components/translator/Controls";
 import { StatusBar } from "../components/translator/StatusBar";
 import { SettingsPanel } from "../components/translator/SettingsPanel";
 import { useTranslatorStore } from "../store/useTranslatorStore";
+import { speakSentence } from "../lib/speech";
 
 export default function Home() {
   const [showDashboard, setShowDashboard] = useState(false);
@@ -64,21 +65,12 @@ export default function Home() {
           e.preventDefault();
           store.backspaceWord();
         }
-      } else if (e.code === "Enter") {
-        e.preventDefault();
-        if (store.constructedSentence.trim() && "speechSynthesis" in window) {
-          window.speechSynthesis.cancel();
-          const utterance = new SpeechSynthesisUtterance(store.constructedSentence.toLowerCase());
-          
-          const voices = window.speechSynthesis.getVoices();
-          const targetVoice = voices.find(v => v.name === store.selectedVoiceName);
-          if (targetVoice) utterance.voice = targetVoice;
-          
-          utterance.rate = store.speechRate;
-          utterance.pitch = 1.0;
-          window.speechSynthesis.speak(utterance);
-          store.setStatusBarMessage("Speaking sentence via shortcut...");
-        }
+        } else if (e.code === "Enter") {
+          e.preventDefault();
+          if (store.constructedSentence.trim() && "speechSynthesis" in window) {
+            speakSentence(store.constructedSentence, store.selectedVoiceName, store.speechRate);
+            store.setStatusBarMessage("Speaking sentence via shortcut...");
+          }
       } else if (e.code === "Escape") {
         e.preventDefault();
         store.clearSentence();
