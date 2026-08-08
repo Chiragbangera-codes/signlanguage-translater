@@ -4,7 +4,11 @@ import { RotateCcw, Delete, CornerDownLeft, Type } from "lucide-react";
 import { useTranslatorStore } from "../../store/useTranslatorStore";
 
 export const WordBuilder: React.FC = () => {
-  const { currentWord, clearWord, backspaceWord, commitWordToSentence, isTranslating } = useTranslatorStore();
+  const { currentWord, clearWord, backspaceWord, commitWordToSentence, isTranslating, activeMode } = useTranslatorStore();
+
+  const displayTokens = activeMode === "words"
+    ? currentWord.split(" ").filter((w) => w.length > 0)
+    : currentWord.split("");
 
   return (
     <div className="rounded-2xl border border-zinc-900 bg-zinc-950/40 p-6 backdrop-blur-md flex flex-col justify-between min-h-[160px] h-full">
@@ -18,30 +22,36 @@ export const WordBuilder: React.FC = () => {
       </div>
 
       {/* Word Box Display */}
-      <div className="flex-1 flex items-center justify-start py-4 overflow-x-auto min-h-[60px]">
+      <div className="flex-1 flex items-center justify-start py-4 overflow-x-auto min-h-[60px] gap-1.5">
         {currentWord ? (
-          <div className="flex gap-1.5 items-center">
-            {currentWord.split("").map((letter, idx) => (
-              <motion.div
-                key={idx}
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                className="w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-lg font-bold text-white font-mono shadow-md"
-              >
-                {letter}
-              </motion.div>
-            ))}
-            <motion.div 
-              animate={{ opacity: [0, 1, 0] }}
-              transition={{ repeat: Infinity, duration: 0.8 }}
-              className="w-1.5 h-6.5 bg-violet-400 rounded-full ml-1"
-            />
-          </div>
+          displayTokens.map((token, idx) => (
+            <motion.div
+              key={idx}
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              className={`${
+                activeMode === "words" 
+                  ? "px-4 h-10 rounded-lg" 
+                  : "w-10 h-10 rounded-lg"
+              } bg-zinc-900 border border-zinc-800 flex items-center justify-center text-lg font-bold text-white font-mono shadow-md`}
+            >
+              {token}
+            </motion.div>
+          ))
         ) : (
           <span className="text-sm text-zinc-600 italic select-none">
-            {isTranslating ? "Hold ISL gestures to construct letters..." : "Connect camera to start constructing words..."}
+            {activeMode === "words"
+              ? (isTranslating ? "Hold ISL word gestures to construct the phrase..." : "Connect camera to start constructing words...")
+              : (isTranslating ? "Hold ISL gestures to construct letters..." : "Connect camera to start constructing words...")}
           </span>
+        )}
+        {currentWord && isTranslating && activeMode === "numbers" && (
+          <motion.div 
+            animate={{ opacity: [0, 1, 0] }}
+            transition={{ repeat: Infinity, duration: 0.8 }}
+            className="w-1.5 h-6.5 bg-violet-400 rounded-full ml-1"
+          />
         )}
       </div>
 

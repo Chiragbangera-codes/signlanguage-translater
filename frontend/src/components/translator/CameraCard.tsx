@@ -56,6 +56,7 @@ export const CameraCard: React.FC = () => {
     setWebcamActive, 
     setPrediction, 
     appendLetterToWord, 
+    appendWordToCurrentWord,
     setStatusBarMessage,
     setCameraFps,
     setApiHealthy,
@@ -159,13 +160,28 @@ export const CameraCard: React.FC = () => {
         if (holdDuration >= 700) {
           // Check cooldown lock (500ms) to prevent stuttering
           const cooldownElapsed = now - lastAppendTime.current;
-          if (cooldownElapsed >= 500) {
+           if (cooldownElapsed >= 500) {
             lastAppendTime.current = now;
             lastAppendedLetter.current = majorityLetter;
-            
-            // Append prediction to the constructed word
-            appendLetterToWord(majorityLetter);
-            setStatusBarMessage(`Added letter "${majorityLetter}" (Held for ${holdDuration}ms)`);
+
+            // Read the active translation mode from the store (numbers vs words)
+            const { activeMode: mode } = useTranslatorStore.getState();
+
+            if (mode === "words") {
+              // Words mode: each gesture is a complete word. Route the
+              // word through the Word Constructor so the user can review
+              // it before committing to the sentence.
+              appendWordToCurrentWord(majorityLetter);
+              setStatusBarMessage(`Registered word: ${majorityLetter}`);
+              currentMajorityLetter.current = null;
+              majorityLetterStartTime.current = 0;
+              predictionBuffer.current = [];
+            } else {
+              // Numbers mode: append the digit to the current word to form
+              // multi-digit numbers (e.g. 1 + 0 + 0 -> 100).
+              appendLetterToWord(majorityLetter);
+              setStatusBarMessage(`Added letter "${majorityLetter}" (Held for ${holdDuration}ms)`);
+            }
           }
         }
       }
@@ -174,7 +190,7 @@ export const CameraCard: React.FC = () => {
       currentMajorityLetter.current = null;
       majorityLetterStartTime.current = 0;
     }
-  }, [appendLetterToWord, setStatusBarMessage]);
+  }, [appendLetterToWord, appendWordToCurrentWord, setStatusBarMessage]);
 
   // Maps one MediaPipe result to a 127-value frame, then sends a 30-frame sequence.
   const executeInference = useCallback(async (results: any) => {

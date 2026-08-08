@@ -17,16 +17,21 @@ for path in env_paths:
         load_dotenv(path)
         break
 
+MODEL_MODE = os.getenv("MODEL_MODE", "numbers").lower()
+
 DEFAULT_DATASET_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "dataset", "digits"
+    os.path.dirname(os.path.dirname(__file__)), "dataset", "words" if MODEL_MODE == "words" else "digits"
 )
 DATASET_PATH = os.getenv("DATASET_PATH", DEFAULT_DATASET_PATH)
 
 DEFAULT_LABEL_ENCODER_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "ml", "model", "label_encoder.pkl"
+    os.path.dirname(os.path.dirname(__file__)), "ml", "model",
+    "label_encoder_words.pkl" if MODEL_MODE == "words" else "label_encoder.pkl"
 )
-LABEL_ENCODER_PATH = os.getenv("LABEL_ENCODER_PATH", DEFAULT_LABEL_ENCODER_PATH)
+if MODEL_MODE == "words":
+    LABEL_ENCODER_PATH = os.getenv("WORDS_LABEL_ENCODER_PATH", DEFAULT_LABEL_ENCODER_PATH)
+else:
+    LABEL_ENCODER_PATH = os.getenv("LABEL_ENCODER_PATH", DEFAULT_LABEL_ENCODER_PATH)
 
 def normalize_hand(landmarks_63: np.ndarray) -> np.ndarray:
     """Normalizes a single hand's 63 landmarks:
@@ -137,13 +142,15 @@ def preprocess_and_split(sequences: np.ndarray, labels: np.ndarray, test_size=0.
 if __name__ == "__main__":
     try:
         print(f"Loading sequence dataset from {DATASET_PATH}...")
+        print(f"Model mode: {MODEL_MODE}")
         sequences, labels = load_sequence_dataset()
 
         X_train, y_train, X_val, y_val, X_test, y_test, le = preprocess_and_split(sequences, labels)
 
         # Save preprocessed splits for Phase 2C decoupling
         npz_dir = os.path.dirname(DEFAULT_DATASET_PATH)
-        npz_path = os.path.join(npz_dir, "preprocessed_data.npz")
+        npz_filename = "preprocessed_data_words.npz" if MODEL_MODE == "words" else "preprocessed_data.npz"
+        npz_path = os.path.join(npz_dir, npz_filename)
         np.savez_compressed(
             npz_path,
             X_train=X_train, y_train=y_train,

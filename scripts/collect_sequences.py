@@ -6,6 +6,7 @@ uses_two_hands, left-hand landmarks (63), and right-hand landmarks (63).
 
 import argparse
 import os
+import re
 from pathlib import Path
 
 import cv2
@@ -106,7 +107,7 @@ def collect(label: str, samples: int, dataset_dir: Path, camera_index: int, sour
     collected = 0
     recording = False
     sequence: list[np.ndarray] = []
-    print(f"Press SPACE to start collecting {samples} samples, then they are collected continuously. Pausing: SPACE, discard current sample: R, quit: Q.")
+    print(f"Collecting '{label}': press SPACE to start {samples} samples, then they run continuously (R to discard current, Q to quit).")
 
     try:
         while collected < samples:
@@ -172,9 +173,36 @@ def collect(label: str, samples: int, dataset_dir: Path, camera_index: int, sour
         cv2.destroyAllWindows()
 
 
+def validate_label(label: str, mode: str) -> str:
+    """Validates and normalizes a gesture label for the given collection mode."""
+    if mode == "numbers":
+        if not re.fullmatch(r"\d", label):
+            raise ValueError(
+                f"--label for 'numbers' mode must be a single digit 0-9, got '{label}'."
+            )
+        return label
+    if mode == "words":
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", label):
+            raise ValueError(
+                f"--label for 'words' mode must be a word (letters/digits/underscores, "
+                f"starting with a letter), got '{label}'."
+            )
+        return label.lower()
+    raise ValueError(f"Unknown collection mode '{mode}'.")
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Collect 30-frame MediaPipe gesture sequences for one digit.")
-    parser.add_argument("--label", choices=[str(number) for number in range(10)])
+    parser = argparse.ArgumentParser(
+        description="Collect 30-frame MediaPipe gesture sequences for one label (digits 0-9 or word signs)."
+    )
+    parser.add_argument(
+        "--mode", choices=["numbers", "words"], default="numbers",
+        help="Collection mode: 'numbers' (digits 0-9, default) or 'words' (word signs like hello, you, how).",
+    )
+    parser.add_argument(
+        "--label",
+        help="Gesture label: a digit 0-9 (numbers) or a word sign (words, e.g. hello, you, how).",
+    )
     parser.add_argument("--samples", type=int, default=50, help="Number of sequences to collect (default: 50).")
     parser.add_argument("--camera", type=int, default=0, help="Camera index (default: 0).")
     parser.add_argument(
@@ -183,11 +211,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--list-cameras", action="store_true", help="List usable camera indexes and exit.")
     parser.add_argument("--max-camera-index", type=int, default=5, help="Highest index to check with --list-cameras.")
-    parser.add_argument(
-        "--dataset-dir",
-        type=Path,
-        default=Path(__file__).resolve().parents[1] / "dataset" / "digits",
-    )
+    parser.add_argument("--dataset-dir", type=Path, help="Override the output dataset directory.")
     args = parser.parse_args()
 
     if args.list_cameras:
@@ -197,4 +221,14 @@ if __name__ == "__main__":
         parser.error("--label is required unless --list-cameras is used.")
     if args.samples < 1:
         parser.error("--samples must be at least 1.")
-    collect(args.label, args.samples, args.dataset_dir, args.camera, args.source)
+
+    try:
+        label = validate_label(args.label, args.mode)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    dataset_dir: Path = args.dataset_dir or (
+        Path(__file__).resolve().parents[1] / "dataset" / ("words" if args.mode == "words" else "digits")
+    )
+    print(f"Collecting {args.samples} sequences for '{label}' (mode: {args.mode}) into {dataset_dir / label}")
+    collect(label, args.samples, dataset_dir, args.camera, args.source)

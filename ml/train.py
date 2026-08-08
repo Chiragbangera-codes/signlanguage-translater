@@ -19,17 +19,29 @@ for path in env_paths:
         load_dotenv(path)
         break
 
-DEFAULT_MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
-DEFAULT_MODEL_SAVE_PATH = os.path.join(DEFAULT_MODEL_DIR, "sign_speak_lstm.keras")
-MODEL_SAVE_PATH = os.getenv("MODEL_SAVE_PATH", DEFAULT_MODEL_SAVE_PATH)
+MODEL_MODE = os.getenv("MODEL_MODE", "numbers").lower()
+_IS_WORDS = MODEL_MODE == "words"
 
-DEFAULT_METADATA_PATH = os.path.join(DEFAULT_MODEL_DIR, "training_metadata.json")
+DEFAULT_MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
+DEFAULT_MODEL_SAVE_PATH = os.path.join(
+    DEFAULT_MODEL_DIR,
+    "sign_speak_words_lstm.keras" if _IS_WORDS else "sign_speak_lstm.keras",
+)
+MODEL_SAVE_PATH = os.getenv(
+    "WORDS_MODEL_SAVE_PATH" if _IS_WORDS else "MODEL_SAVE_PATH",
+    DEFAULT_MODEL_SAVE_PATH,
+)
+
+DEFAULT_METADATA_PATH = os.path.join(
+    DEFAULT_MODEL_DIR,
+    "training_metadata_words.json" if _IS_WORDS else "training_metadata.json",
+)
 METADATA_PATH = os.getenv("METADATA_PATH", DEFAULT_METADATA_PATH)
 
 DEFAULT_DATASET_PATH = os.path.join(
     os.path.dirname(os.path.dirname(__file__)),
     "dataset",
-    "preprocessed_data.npz"
+    "preprocessed_data_words.npz" if _IS_WORDS else "preprocessed_data.npz",
 )
 
 ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
@@ -63,6 +75,7 @@ def train_and_compare():
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 
     print("Loading preprocessed splits...")
+    print(f"Model mode: {MODEL_MODE}")
     X_train, y_train, X_val, y_val, X_test, y_test = load_preprocessed_data()
 
     if X_train.ndim != 3 or X_val.ndim != 3 or X_test.ndim != 3:
@@ -107,7 +120,8 @@ def train_and_compare():
     )
 
     # Save training history
-    history_path = os.path.join(DEFAULT_MODEL_DIR, "training_history.json")
+    history_filename = "training_history_words.json" if _IS_WORDS else "training_history.json"
+    history_path = os.path.join(DEFAULT_MODEL_DIR, history_filename)
     with open(history_path, "w") as f:
         json.dump(
             {metric: [float(value) for value in values] for metric, values in final_history.history.items()},

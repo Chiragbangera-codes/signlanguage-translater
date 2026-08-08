@@ -5,7 +5,7 @@ SignSpeak AI is a modern web application that translates Indian Sign Language (I
 The app supports **two translation modes** selected from the UI:
 
 - **Numbers** — recognizes digit gestures `0`–`9` (the `dataset/digits` collection).
-- **Words** — recognizes alphabet gestures `A`–`Z` (trained from the words dataset; see *Training a words model* below).
+- **Words** — recognizes common word signs (e.g. `hello`, `you`, `how`) from the `dataset/words` collection (see *Train a words model* below).
 
 In **Numbers** mode the digit sequence is also spoken as a number word, e.g. `100` is spoken as *"one hundred"* instead of digit-by-digit.
 
@@ -30,7 +30,7 @@ SignSpeakAI/
   │     └── artifacts/
   ├── backend/
   │     ├── app/
-  │     │     ├── api/v1/predict.py       # POST /api/v1/predict  (accepts ? optional "mode")
+  │     │     ├── api/v1/predict.py       # POST /api/v1/predict  (accepts optional "mode")
   │     │     ├── schemas/predict.py
   │     │     ├── services/model_loader.py
   │     │     ├── core/
@@ -60,7 +60,7 @@ SignSpeakAI/
 - **Real-Time Webcam Translation** — extracts hand landmarks in the browser via MediaPipe.
 - **Dual-Hand Inference** — uses a 127-feature model supporting single/double hand gestures.
 - **Prediction Stabilization** — prediction buffering, majority voting, 700 ms hold detection, and cooldown locks.
-- **Numbers / Words Modes** — toggle between digit (`0`–`9`) and alphabet (`A`–`Z`) models from the controller bar; the live HUD reports the active mode.
+- **Numbers / Words Modes** — toggle between digit (`0`–`9`) and common-word (`hello`, `you`, `how`, …) models from the controller bar; the live HUD reports the active mode.
 - **Text-to-Speech** — native browser speech synthesis that reads multi-digit results as number words (`100` → "one hundred").
 - **Word & Sentence Builder** — full UI controls to delete, commit words to a sentence, clear, and record history.
 
@@ -77,21 +77,25 @@ venv\Scripts\activate       # Windows
 # source venv/bin/activate  # macOS/Linux
 ```
 
-### 2. Data Collection (Numbers)
+### 2. Data Collection
 
-Collect 30-frame MediaPipe landmark sequences for each digit into `dataset/digits/<label>/`:
+Collect 30-frame MediaPipe landmark sequences for each label. Each mode writes to its own folder:
+
+- **Numbers** — digits `0`–`9` into `dataset/digits/<label>/`
+- **Words** — common word signs (e.g. `hello`, `you`, `how`) into `dataset/words/<label>/`
 
 ```bash
 # List usable camera indexes first
 python scripts/collect_sequences.py --list-cameras
 
-# Collect 50 sequences for a single digit (default samples = 50)
-python scripts/collect_sequences.py --label 0 --samples 50
-python scripts/collect_sequences.py --label 1 --samples 50
-# ...repeat for 0..9
+# Collect 50 sequences for a single label (default samples = 50)
+python scripts/collect_sequences.py --mode numbers --label 0 --samples 50     # digit "0"
+python scripts/collect_sequences.py --mode numbers --label 9 --samples 50     # digit "9"
+python scripts/collect_sequences.py --mode words   --label hello --samples 50 # word "hello"
+python scripts/collect_sequences.py --mode words   --label you --samples 50   # word "you"
 
 # Optional: stream from a phone via DroidCam instead of a webcam
-python scripts/collect_sequences.py --label 5 --source "http://PHONE_IP:4747/video"
+python scripts/collect_sequences.py --mode words --label how --source "http://PHONE_IP:4747/video"
 ```
 
 Inside the collector: press **SPACE** to start, samples are collected continuously, **R** discards the current sample, **Q** quits. Hand landmarks are drawn on the preview.
@@ -125,14 +129,16 @@ The API exposes:
 - `GET /api/v1/health` — service + model load status.
 - `POST /api/v1/predict` — body `{ "sequence": [[<127 floats>] x 30], "mode": "numbers" }`.
   - `mode: "numbers"` (default) → digit model (0–9).
-  - `mode: "words"` → alphabet model (A–Z); returns `503` until a trained words model is provided (see below).
+  - `mode: "words"` → word-sign model (e.g. `hello`, `you`, `how`); returns `503` until a trained words model is provided (see below).
 
-To train and serve a **words** model instead of digits, set the env vars before preprocessing/training/serving:
+To train and serve a **words** model (common word signs such as `hello`, `you`, `how`) instead of digits, set `MODEL_MODE=words` before preprocessing and training — the ML scripts then read `dataset/words/` and write the words-specific artifacts automatically:
 
 ```bash
-export WORDS_MODEL_SAVE_PATH=ml/model/sign_speak_words_lstm.keras
-export WORDS_LABEL_ENCODER_PATH=ml/model/label_encoder_words.pkl
+MODEL_MODE=words python ml/preprocess.py
+MODEL_MODE=words python ml/train.py
 ```
+
+Once trained, the backend serves the words model automatically when the frontend selects **Words** (no extra config needed — `ModelLoaderService` loads `ml/model/sign_speak_words_lstm.keras` + `ml/model/label_encoder_words.pkl` on demand). While untrained, selecting **Words** returns `503`.
 
 ### 5. Frontend UI
 
@@ -148,7 +154,7 @@ Open `http://localhost:3000`. Enable the camera, choose **Numbers** or **Words**
 
 1. Start the backend (`uvicorn backend.app.main:app --reload`) and the frontend (`npm run dev`) — both must run together.
 2. Open the frontend, click **Enable Camera**.
-3. Select **Numbers** (digits) or **Words** (alphabet).
+3. Select **Numbers** (digits) or **Words** (word signs like `hello`, `you`).
 4. Click **Start Translation**, perform a gesture and hold until the status bar confirms it was registered.
 5. Use the sentence builder to commit words, then **Speak Out Loud** or **Archive** the result.
 

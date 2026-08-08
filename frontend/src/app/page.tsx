@@ -65,12 +65,18 @@ export default function Home() {
           e.preventDefault();
           store.backspaceWord();
         }
-        } else if (e.code === "Enter") {
+      } else if (e.code === "Enter") {
+        e.preventDefault();
+        const target = store.meaningfulSentence || store.constructedSentence;
+        if (target.trim() && "speechSynthesis" in window) {
+          speakSentence(target, store.selectedVoiceName, store.speechRate);
+          store.setStatusBarMessage("Speaking sentence via shortcut...");
+        }
+      } else if (e.code === "KeyC") {
+        if (store.constructedSentence.trim()) {
           e.preventDefault();
-          if (store.constructedSentence.trim() && "speechSynthesis" in window) {
-            speakSentence(store.constructedSentence, store.selectedVoiceName, store.speechRate);
-            store.setStatusBarMessage("Speaking sentence via shortcut...");
-          }
+          store.constructMeaningfulSentence();
+        }
       } else if (e.code === "Escape") {
         e.preventDefault();
         store.clearSentence();

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { constructMeaningfulSentence } from "../lib/grammar";
 
 export interface PredictionItem {
   label: string;
@@ -23,6 +24,7 @@ interface TranslatorState {
   // Language construction states
   currentWord: string;
   constructedSentence: string;
+  meaningfulSentence: string | null;
   history: string[];
 
   // Settings State
@@ -47,15 +49,21 @@ interface TranslatorState {
     topPredictions: PredictionItem[],
     processingTimeMs: number
   ) => void;
-  
+
   // Word & Sentence manipulation
   appendLetterToWord: (letter: string) => void;
+  appendWordToCurrentWord: (word: string) => void;
   backspaceWord: () => void;
   clearWord: () => void;
   commitWordToSentence: () => void;
+  addWordToSentence: (word: string) => void;
   clearSentence: () => void;
   addSentenceToHistory: (sentence: string) => void;
   clearHistory: () => void;
+
+  // Grammar correction
+  setMeaningfulSentence: (sentence: string | null) => void;
+  constructMeaningfulSentence: () => void;
 
   // Settings & Performance Actions
   setConfidenceThreshold: (val: number) => void;
@@ -81,6 +89,7 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
   
   currentWord: "",
   constructedSentence: "",
+  meaningfulSentence: null,
   history: [
     "HELLO WORLD",
     "WELCOME TO SIGNSPEAK AI",
@@ -129,11 +138,32 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
     currentWord: state.currentWord + letter,
     statusBarMessage: `Registered letter: ${letter}`
   })),
-  
-  backspaceWord: () => set((state) => ({
-    currentWord: state.currentWord.slice(0, -1),
-    statusBarMessage: "Deleted last character."
+
+  appendWordToCurrentWord: (word) => set((state) => ({
+    currentWord: state.currentWord
+      ? `${state.currentWord} ${word}`
+      : word,
+    statusBarMessage: `Registered word: ${word}`
   })),
+
+  backspaceWord: () => set((state) => {
+    if (!state.currentWord.trim()) {
+      return { currentWord: "", statusBarMessage: "Word is empty." };
+    }
+    if (state.activeMode === "words") {
+      const parts = state.currentWord.trim().split(" ");
+      parts.pop();
+      const newWord = parts.join(" ");
+      return {
+        currentWord: newWord,
+        statusBarMessage: newWord ? "Removed last word." : "Word cleared."
+      };
+    }
+    return {
+      currentWord: state.currentWord.slice(0, -1),
+      statusBarMessage: "Deleted last character."
+    };
+  }),
   
   clearWord: () => set({ 
     currentWord: "",
@@ -156,6 +186,19 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
     constructedSentence: "",
     statusBarMessage: "Sentence cleared."
   }),
+
+  addWordToSentence: (word) => set((state) => {
+    const trimmed = word.trim();
+    if (!trimmed) return {};
+    const newSentence = state.constructedSentence
+      ? `${state.constructedSentence} ${trimmed}`
+      : trimmed;
+    return {
+      constructedSentence: newSentence,
+      currentWord: "",
+      statusBarMessage: `Added word: ${trimmed}`,
+    };
+  }),
   
   addSentenceToHistory: (sentence) => set((state) => ({
     history: [sentence, ...state.history],
@@ -165,6 +208,27 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
   clearHistory: () => set({ 
     history: [],
     statusBarMessage: "History cleared."
+  }),
+
+  setMeaningfulSentence: (sentence) => set({
+    meaningfulSentence: sentence,
+    statusBarMessage: sentence
+      ? "Meaningful sentence constructed."
+      : "Meaningful sentence cleared."
+  }),
+
+  constructMeaningfulSentence: () => set((state) => {
+    if (!state.constructedSentence.trim()) {
+      return {
+        meaningfulSentence: null,
+        statusBarMessage: "No words to construct a sentence from."
+      };
+    }
+    const result = constructMeaningfulSentence(state.constructedSentence);
+    return {
+      meaningfulSentence: result,
+      statusBarMessage: "Sign words converted to meaningful sentence."
+    };
   }),
 
   // Settings & Performance Actions
