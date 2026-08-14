@@ -2,7 +2,6 @@ from typing import Annotated, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 SequenceFrame = Annotated[List[float], Field(min_length=127, max_length=127)]
 
 

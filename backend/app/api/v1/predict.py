@@ -57,13 +57,37 @@ async def predict_gesture(payload: PredictionRequest):
         )
 
     try:
-        # Apply the same per-frame normalization used by preprocess.py.
-        sequence = np.asarray(payload.sequence, dtype=np.float32)
-        for frame in sequence:
-            frame[1:64] = normalize_hand(frame[1:64])
-            frame[64:127] = normalize_hand(frame[64:127])
+        # The active MLP model expects a single (127,) frame, not the full
+        # 30-frame sequence.  Select the latest frame that contains a detected
+        # hand (left-hand coords not all -1.0 padding) so we use the most
+        # recent, complete gesture snapshot — matching how training samples
+        # were constructed from individual frames.
+        raw_sequence = np.asarray(payload.sequence, dtype=np.float32)
 
-        probs = model_loader.predict(sequence, mode=mode)
+        frame_input: np.ndarray | None = None
+        for frame in reversed(raw_sequence):
+            # A frame is valid when the left-hand coordinates are not fully
+            # padded with -1.0 (the sentinel value for "no hand detected").
+            if not np.allclose(frame[1:64], -1.0):
+                frame_input = frame.copy()
+                break
+
+        if frame_input is None:
+            logger.warning("No valid hand detected in any of the 30 sequence frames.")
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "No hand was detected in the provided sequence. "
+                    "Ensure a hand is clearly visible in the camera frame."
+                ),
+            )
+
+        # Apply per-frame normalization (same as preprocess.py) to the
+        # selected single frame before passing it to the MLP.
+        frame_input[1:64] = normalize_hand(frame_input[1:64])
+        frame_input[64:127] = normalize_hand(frame_input[64:127])
+
+        probs = model_loader.predict(frame_input, mode=mode)
 
         # Extract the three most likely labels for the requested mode.
         # Sort classes in descending order of probabilities

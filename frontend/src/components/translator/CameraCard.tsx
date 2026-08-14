@@ -227,7 +227,7 @@ export const CameraCard: React.FC = () => {
         const label: string =
           handedness?.classification?.[0]?.label ?? handedness?.label ?? "";
 
-        console.log("[HandednessDebug] raw handedness object:", JSON.stringify(handedness), "→ resolved label:", label);
+
 
         if (label === "Right") {
           // MediaPipe "Right" hand (non-mirrored) is physically Left hand -> route to leftHandCoords
@@ -394,7 +394,6 @@ export const CameraCard: React.FC = () => {
   const startCamera = useCallback(async () => {
     setCameraError(null);
     try {
-      console.log("[CameraCard] Requesting webcam access...");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           width: { ideal: 640 }, 
@@ -465,7 +464,6 @@ export const CameraCard: React.FC = () => {
         // onHandResultsRef.current always points to the latest version of onHandResults.
         hands.onResults((results: any) => onHandResultsRef.current(results));
         handsRef.current = hands;
-        console.log("[CameraCard] MediaPipe Hands package initialized dynamically.");
         setStatusBarMessage("System Ready. Connect webcam to start translation.");
       } catch (e) {
         console.error("Failed to initialize MediaPipe Hands package:", e);

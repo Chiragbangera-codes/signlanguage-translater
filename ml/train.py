@@ -3,11 +3,10 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
 from dotenv import load_dotenv
 from tensorflow.keras import Sequential
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from tensorflow.keras.layers import Dense, Dropout, Input, LSTM
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 
 # Load env variables
 env_paths = [
@@ -89,8 +88,6 @@ def train_and_compare():
     input_shape = X_train.shape[1:]
     num_classes = len(np.unique(np.concatenate((y_train, y_val, y_test))))
 
-    epochs = 20
-    batch_size = 64
 
     print("\n" + "=" * 60)
     print("             LSTM MODEL TRAINING")

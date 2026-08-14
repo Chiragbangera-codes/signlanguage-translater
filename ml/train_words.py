@@ -3,15 +3,13 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
 from tensorflow.keras import Sequential
 from tensorflow.keras.callbacks import (
     EarlyStopping,
     ModelCheckpoint,
     ReduceLROnPlateau,
 )
-from tensorflow.keras.layers import Dense, Dropout, Input, LSTM
-
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 
 # ============================================================
 # PATHS

@@ -1,7 +1,7 @@
 import os
 import pickle
 import threading
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import tensorflow as tf
@@ -17,27 +17,30 @@ for path in env_paths:
         load_dotenv(path)
         break
 
-DEFAULT_MODEL_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-    "ml", "model"
-)
+from pathlib import Path
+
+# Resolve base model directory relative to this file's location:
+# backend/app/services/model_loader.py -> backend/app/services -> backend/app -> backend -> SignSpeakAI root
+SERVICES_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SERVICES_DIR.parent.parent.parent
+DEFAULT_MODEL_DIR = PROJECT_ROOT / "ml" / "model"
 
 NUMBERS_MODEL_PATH = os.getenv(
     "MODEL_SAVE_PATH",
-    os.path.join(DEFAULT_MODEL_DIR, "sign_speak_lstm.keras")
+    str(DEFAULT_MODEL_DIR / "sign_speak_model.keras")
 )
 NUMBERS_LABEL_ENCODER_PATH = os.getenv(
     "LABEL_ENCODER_PATH",
-    os.path.join(DEFAULT_MODEL_DIR, "label_encoder.pkl")
+    str(DEFAULT_MODEL_DIR / "label_encoder.pkl")
 )
 
 WORDS_MODEL_PATH = os.getenv(
     "WORDS_MODEL_SAVE_PATH",
-    os.path.join(DEFAULT_MODEL_DIR, "sign_speak_words_lstm.keras")
+    str(DEFAULT_MODEL_DIR / "sign_speak_words_lstm.keras")
 )
 WORDS_LABEL_ENCODER_PATH = os.getenv(
     "WORDS_LABEL_ENCODER_PATH",
-    os.path.join(DEFAULT_MODEL_DIR, "label_encoder_words.pkl")
+    str(DEFAULT_MODEL_DIR / "label_encoder_words.pkl")
 )
 
 MODE_CONFIGS: Dict[str, Dict[str, str]] = {
