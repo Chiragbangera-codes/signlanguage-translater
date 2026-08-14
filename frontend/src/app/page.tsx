@@ -97,8 +97,8 @@ export default function Home() {
       a: "We prioritize user privacy. The webcam video stream is processed entirely within your local browser to extract coordinate landmarks. Only the 127 numerical coordinates (no images or video frames) are sent to our secure prediction API, ensuring your video feed never leaves your device."
     },
     {
-      q: "Which sign language is supported?",
-      a: "SignSpeak AI is specifically trained on Indian Sign Language (ISL) static gesture alphabets (A to Z). It supports both one-handed gestures and two-handed gestures matching the official ISL configurations."
+      q: "What gestures does SignSpeak AI recognize?",
+      a: "SignSpeak AI is trained on the full 26-character gesture alphabet (A to Z) plus numeric gestures (0-9). It recognizes both one-handed and two-handed static poses with high accuracy."
     },
     {
       q: "Do I need a high-end graphics card to run it?",
@@ -119,8 +119,8 @@ export default function Home() {
     },
     {
       icon: <Brain className="h-6 w-6 text-fuchsia-400" />,
-      title: "Dual-Hand Inference",
-      desc: "Advanced MLP model architecture configured to classify both single-handed and double-handed gestures."
+      title: "Dual-Hand Gesture Recognition",
+      desc: "Advanced MLP model architecture configured to classify both single-handed and double-handed gestures across the full alphabet and numeric sets."
     },
     {
       icon: <Activity className="h-6 w-6 text-emerald-400" />,
@@ -139,7 +139,7 @@ export default function Home() {
     },
     {
       icon: <Cpu className="h-6 w-6 text-amber-400" />,
-      title: "Fast API Backend",
+      title: "High-Speed API Backend",
       desc: "TensorFlow-powered prediction endpoint served via FastAPI with sub-5ms model latency."
     }
   ];
@@ -150,15 +150,9 @@ export default function Home() {
     { category: "Styling & Motion", items: ["Tailwind CSS", "Framer Motion", "shadcn/ui"] },
     { category: "Deep Learning Model", items: ["TensorFlow", "Keras (MLP classifier)", "Scikit-Learn"] },
     { category: "Inference Server", items: ["FastAPI", "Uvicorn Async Worker", "Pydantic validation"] },
-    { category: "Computer Vision", items: ["MediaPipe Hands", "OpenCV (Dataset collection)"] }
+    { category: "Computer Vision", items: ["MediaPipe Hands", "OpenCV"] }
   ];
 
-  // Team Data
-  const team = [
-    { name: "Rahul Sharma", role: "Lead Machine Learning Engineer", initial: "RS" },
-    { name: "Ananya Patel", role: "Full Stack Engineer & Web Lead", initial: "AP" },
-    { name: "Vikram Singh", role: "UX Designer & Researcher", initial: "VS" }
-  ];
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-violet-500/30 selection:text-violet-200 overflow-x-hidden">
@@ -239,22 +233,10 @@ export default function Home() {
                 <a href="#features" className="text-sm text-zinc-400 hover:text-white transition-colors">Features</a>
                 <a href="#how-it-works" className="text-sm text-zinc-400 hover:text-white transition-colors">How it Works</a>
                 <a href="#tech-stack" className="text-sm text-zinc-400 hover:text-white transition-colors">Tech Stack</a>
-                <a href="#team" className="text-sm text-zinc-400 hover:text-white transition-colors">Team</a>
                 <a href="#faq" className="text-sm text-zinc-400 hover:text-white transition-colors">FAQ</a>
               </div>
 
               <div className="hidden md:flex items-center gap-4">
-                <a 
-                  href="https://github.com/Chiragbangera-codes/signlanguage-translater" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors flex items-center justify-center"
-                  aria-label="GitHub Repository"
-                >
-                  <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-                    <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
-                  </svg>
-                </a>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -288,18 +270,9 @@ export default function Home() {
                   <a href="#features" onClick={() => setMobileMenuOpen(false)} className="text-base text-zinc-300 hover:text-white">Features</a>
                   <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="text-base text-zinc-300 hover:text-white">How it Works</a>
                   <a href="#tech-stack" onClick={() => setMobileMenuOpen(false)} className="text-base text-zinc-300 hover:text-white">Tech Stack</a>
-                  <a href="#team" onClick={() => setMobileMenuOpen(false)} className="text-base text-zinc-300 hover:text-white">Team</a>
                   <a href="#faq" onClick={() => setMobileMenuOpen(false)} className="text-base text-zinc-300 hover:text-white">FAQ</a>
                   <div className="h-px bg-zinc-900 w-full" />
                   <div className="flex flex-col gap-4">
-                    <a 
-                      href="https://github.com" 
-                      className="flex items-center gap-2 text-zinc-400 hover:text-white text-base"
-                    >
-                      <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-                        <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
-                      </svg> GitHub Repository
-                    </a>
                     <button 
                       onClick={() => { setMobileMenuOpen(false); setShowDashboard(true); }}
                       className="w-full py-3 rounded-full text-center text-sm font-semibold bg-white text-zinc-950 hover:bg-zinc-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
@@ -325,7 +298,7 @@ export default function Home() {
                 className="mb-6 px-4 py-1.5 rounded-full border border-violet-500/20 bg-violet-950/20 text-violet-300 text-xs font-semibold tracking-wide inline-flex items-center gap-1.5 backdrop-blur-md"
               >
                 <Sparkles className="h-3.5 w-3.5" />
-                AI-Powered ISL Gesture Engine v1.0
+                AI-Powered Gesture Recognition Engine v1.0
               </motion.div>
 
               {/* Heading */}
@@ -345,7 +318,7 @@ export default function Home() {
                 transition={{ duration: 0.6, delay: 0.2 }}
                 className="mt-6 text-base sm:text-lg md:text-xl text-zinc-400 max-w-2xl leading-relaxed"
               >
-                SignSpeak AI translates Indian Sign Language (ISL) hand gestures into text and speech instantly. Built using local browser tracking and advanced deep learning.
+                SignSpeak AI translates sign language hand gestures into text and speech instantly. Built using local browser tracking and advanced deep learning.
               </motion.p>
 
               {/* CTA Buttons */}
@@ -392,7 +365,7 @@ export default function Home() {
                       <div className="w-3 h-3 rounded-full bg-amber-500/80" />
                       <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
                     </div>
-                    <div className="text-xs text-zinc-500 font-mono">isl_translator_sandbox.exe</div>
+                    <div className="text-xs text-zinc-500 font-mono">signspeak_sandbox.exe</div>
                     <div className="w-12" />
                   </div>
 
@@ -655,39 +628,7 @@ export default function Home() {
             </div>
           </section>
 
-          {/* 7. Team Section */}
-          <section id="team" className="py-24 border-t border-zinc-900 bg-zinc-950/20">
-            <div className="max-w-7xl mx-auto px-6">
-              <div className="text-center max-w-2xl mx-auto mb-16">
-                <span className="text-xs font-semibold text-violet-400 uppercase tracking-widest font-mono">Academic Collaboration</span>
-                <h2 className="text-3xl font-bold tracking-tight sm:text-4xl text-white mt-3">
-                  Project Development Team
-                </h2>
-                <p className="mt-4 text-zinc-400 text-sm sm:text-base">
-                  A final-year project collaboration integrating computer vision and web development.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                {team.map((member, idx) => (
-                  <div 
-                    key={idx}
-                    className="p-6.5 rounded-2xl border border-zinc-900 bg-zinc-900/5 backdrop-blur-md flex items-center gap-5 hover:border-zinc-800 transition-all duration-300"
-                  >
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-500 flex items-center justify-center text-white text-lg font-black shadow-lg">
-                      {member.initial}
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-white">{member.name}</h3>
-                      <span className="text-xs text-zinc-500 mt-1 block">{member.role}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* 8. FAQ Section */}
+          {/* 7. FAQ Section */}
           <section id="faq" className="py-24 border-t border-zinc-900">
             <div className="max-w-3xl mx-auto px-6">
               <div className="text-center mb-16">
@@ -748,18 +689,6 @@ export default function Home() {
               </p>
 
               <div className="flex gap-6">
-                <a 
-                  href="https://github.com" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5"
-                  aria-label="GitHub Source Code"
-                >
-                  <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-                    <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
-                  </svg>
-                  Source Code
-                </a>
                 <a 
                   href="/docs" 
                   className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5"

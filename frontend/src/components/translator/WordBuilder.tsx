@@ -42,8 +42,8 @@ export const WordBuilder: React.FC = () => {
         ) : (
           <span className="text-sm text-zinc-600 italic select-none">
             {activeMode === "words"
-              ? (isTranslating ? "Hold ISL word gestures to construct the phrase..." : "Connect camera to start constructing words...")
-              : (isTranslating ? "Hold ISL gestures to construct letters..." : "Connect camera to start constructing words...")}
+              ? (isTranslating ? "Hold word gestures to construct the phrase..." : "Connect camera to start constructing words...")
+              : (isTranslating ? "Hold gestures to construct letters..." : "Connect camera to start constructing words...")}
           </span>
         )}
         {currentWord && isTranslating && activeMode === "numbers" && (
@@ -57,28 +57,28 @@ export const WordBuilder: React.FC = () => {
 
       {/* Action Controls */}
       <div className="flex gap-3.5 mt-auto pt-3 border-t border-zinc-900/60">
-        <button
-          onClick={clearWord}
-          disabled={!currentWord}
-          className="flex-1 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-          Clear
-        </button>
+          <button
+            onClick={clearWord}
+            disabled={!currentWord}
+            className="flex-1 w-full min-w-0 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Clear
+          </button>
 
-        <button
-          onClick={backspaceWord}
-          disabled={!currentWord}
-          className="flex-1 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          <Delete className="h-3.5 w-3.5" />
-          Delete
-        </button>
+          <button
+            onClick={backspaceWord}
+            disabled={!currentWord}
+            className="flex-1 w-full min-w-0 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Delete className="h-3.5 w-3.5" />
+            Delete
+          </button>
 
-        <button
-          onClick={commitWordToSentence}
-          disabled={!currentWord}
-          className="flex-2 py-2 px-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-violet-500/10"
+          <button
+            onClick={commitWordToSentence}
+            disabled={!currentWord}
+            className="flex-1 w-full min-w-0 py-2 px-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-violet-500/10"
         >
           <CornerDownLeft className="h-3.5 w-3.5" />
           Append Word

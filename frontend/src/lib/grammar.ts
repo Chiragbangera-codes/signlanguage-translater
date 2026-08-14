@@ -258,7 +258,7 @@ function applyFallback(words: string[]): string {
 }
 
 function buildQuestion(words: string[]): string {
-  // Common ISL question patterns:
+  // Common sign language question patterns:
   // "what name you" -> "What is your name?"
   // "how you" -> "How are you?"
   // "where go you" -> "Where are you going?"

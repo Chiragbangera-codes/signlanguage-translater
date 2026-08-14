@@ -98,34 +98,34 @@ export const SentenceBuilder: React.FC = () => {
          <button
            onClick={clearSentence}
            disabled={!constructedSentence}
-           className="flex-1 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-         >
-           <Trash2 className="h-3.5 w-3.5" />
-           Clear
-         </button>
+            className="flex-1 w-full min-w-0 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Clear
+          </button>
 
-         <button
-           onClick={handleConstruct}
-           disabled={!constructedSentence}
-           className="flex-1 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-         >
-           <Sparkle className="h-3.5 w-3.5" />
-           Construct Sentence
-         </button>
+          <button
+            onClick={handleConstruct}
+            disabled={!constructedSentence}
+            className="flex-1 w-full min-w-0 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Sparkle className="h-3.5 w-3.5" />
+            Construct Sentence
+          </button>
 
-         <button
-           onClick={handleArchive}
-           disabled={!constructedSentence}
-           className="flex-1 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-         >
-           <Archive className="h-3.5 w-3.5" />
-           Archive
-         </button>
+          <button
+            onClick={handleArchive}
+            disabled={!constructedSentence}
+            className="flex-1 w-full min-w-0 py-2 px-3 rounded-lg border border-zinc-900 bg-zinc-900/10 text-zinc-400 hover:text-white hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Archive className="h-3.5 w-3.5" />
+            Archive
+          </button>
 
-         <button
-           onClick={handleSpeak}
-           disabled={!(meaningfulSentence || constructedSentence)}
-           className="flex-2 py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-sky-500/10"
+          <button
+            onClick={handleSpeak}
+            disabled={!(meaningfulSentence || constructedSentence)}
+            className="flex-1 w-full min-w-0 py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-sky-500/10"
          >
            <Volume2 className="h-3.5 w-3.5" />
            Speak Out Loud

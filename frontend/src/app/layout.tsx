@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SignSpeak AI - Real-time Indian Sign Language (ISL) Translator",
-  description: "An AI-powered web application that translates Indian Sign Language hand gestures into text and speech in real time using Computer Vision and Deep Learning.",
+  title: "SignSpeak AI - Real-time Sign Language Translator",
+  description: "An AI-powered web application that translates sign language hand gestures into text and speech in real time using Computer Vision and Deep Learning.",
 };
 
 
