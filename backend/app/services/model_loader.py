@@ -27,7 +27,7 @@ DEFAULT_MODEL_DIR = PROJECT_ROOT / "ml" / "model"
 
 NUMBERS_MODEL_PATH = os.getenv(
     "MODEL_SAVE_PATH",
-    str(DEFAULT_MODEL_DIR / "sign_speak_model.keras")
+    str(DEFAULT_MODEL_DIR / "sign_speak_lstm.keras")
 )
 NUMBERS_LABEL_ENCODER_PATH = os.getenv(
     "LABEL_ENCODER_PATH",

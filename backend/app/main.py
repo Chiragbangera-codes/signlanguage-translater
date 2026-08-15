@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="SignSpeak AI API",
-    description="Real-time Indian Sign Language (ISL) Translation Inference API",
+    description="Real-time Sign Language Translation Inference API",
     version="1.0.0",
     lifespan=lifespan
 )

@@ -57,22 +57,28 @@ async def predict_gesture(payload: PredictionRequest):
         )
 
     try:
-        # The active MLP model expects a single (127,) frame, not the full
-        # 30-frame sequence.  Select the latest frame that contains a detected
-        # hand (left-hand coords not all -1.0 padding) so we use the most
-        # recent, complete gesture snapshot — matching how training samples
-        # were constructed from individual frames.
-        raw_sequence = np.asarray(payload.sequence, dtype=np.float32)
+        # The LSTM model expects the full 30-frame sequence (30, 127),
+        # not a single (127,) frame.  Normalize every frame's hand
+        # landmarks per-frame, matching the preprocessing pipeline
+        # used during training (preprocess_features in preprocess.py).
+        sequence_input = np.asarray(payload.sequence, dtype=np.float32)
 
-        frame_input: np.ndarray | None = None
-        for frame in reversed(raw_sequence):
-            # A frame is valid when the left-hand coordinates are not fully
-            # padded with -1.0 (the sentinel value for "no hand detected").
+        if sequence_input.shape != (30, 127):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Expected a (30, 127) landmark sequence, got shape {sequence_input.shape}."
+            )
+
+        # Validate that at least one frame contains a detected hand
+        # (left-hand coords not all -1.0 padding — the sentinel for
+        # "no hand detected").
+        has_valid_frame = False
+        for frame in sequence_input:
             if not np.allclose(frame[1:64], -1.0):
-                frame_input = frame.copy()
+                has_valid_frame = True
                 break
 
-        if frame_input is None:
+        if not has_valid_frame:
             logger.warning("No valid hand detected in any of the 30 sequence frames.")
             raise HTTPException(
                 status_code=422,
@@ -82,12 +88,13 @@ async def predict_gesture(payload: PredictionRequest):
                 ),
             )
 
-        # Apply per-frame normalization (same as preprocess.py) to the
-        # selected single frame before passing it to the MLP.
-        frame_input[1:64] = normalize_hand(frame_input[1:64])
-        frame_input[64:127] = normalize_hand(frame_input[64:127])
+        # Normalize all frames in the sequence (same per-frame logic
+        # as preprocess_features in preprocess.py).
+        for frame in sequence_input:
+            frame[1:64] = normalize_hand(frame[1:64])
+            frame[64:127] = normalize_hand(frame[64:127])
 
-        probs = model_loader.predict(frame_input, mode=mode)
+        probs = model_loader.predict(sequence_input, mode=mode)
 
         # Extract the three most likely labels for the requested mode.
         # Sort classes in descending order of probabilities
