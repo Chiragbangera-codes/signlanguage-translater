@@ -54,6 +54,7 @@ allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://signlanguage-translater.vercel.app",
 ]
 if allowed_origins_env:
     for o in allowed_origins_env.split(","):
