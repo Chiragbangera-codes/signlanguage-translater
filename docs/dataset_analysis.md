@@ -1,10 +1,10 @@
-# Indian Sign Language Landmark Dataset Analysis
+# Sign Language Landmark Dataset Analysis
 
-This report documents the exploration, validation, and visual analysis of the Indian Sign Language (ISL) Hand Landmarks dataset.
+This report documents the exploration, validation, and visual analysis of the sign language Hand Landmarks dataset.
 
 ## 1. Summary Statistics
 
-The dataset was loaded and analyzed from `dataset/Indian Sign Language Gesture Landmarks.csv`.
+The dataset was loaded and analyzed from `dataset/Gesture Landmarks.csv`.
 
 | Metric | Value | Details |
 |---|---|---|
