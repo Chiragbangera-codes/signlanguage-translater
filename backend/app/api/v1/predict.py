@@ -13,7 +13,7 @@ workspace_root = os.path.dirname(
 if workspace_root not in sys.path:
     sys.path.append(workspace_root)
 
-from ml.preprocess import normalize_hand
+from ml.preprocess import normalize_hands_batch
 
 from ...schemas.predict import PredictionItem, PredictionRequest, PredictionResponse
 from ...services.model_loader import ModelLoaderService
@@ -88,11 +88,9 @@ async def predict_gesture(payload: PredictionRequest):
                 ),
             )
 
-        # Normalize all frames in the sequence (same per-frame logic
-        # as preprocess_features in preprocess.py).
-        for frame in sequence_input:
-            frame[1:64] = normalize_hand(frame[1:64])
-            frame[64:127] = normalize_hand(frame[64:127])
+        # Normalize all frames in the sequence using vectorized NumPy operations
+        sequence_input[:, 1:64] = normalize_hands_batch(sequence_input[:, 1:64])
+        sequence_input[:, 64:127] = normalize_hands_batch(sequence_input[:, 64:127])
 
         probs = model_loader.predict(sequence_input, mode=mode)
 

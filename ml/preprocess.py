@@ -62,6 +62,27 @@ def normalize_hand(landmarks_63: np.ndarray) -> np.ndarray:
     # Flatten back to 63 features
     return scaled.flatten()
 
+def normalize_hands_batch(hands_batch: np.ndarray) -> np.ndarray:
+    """Vectorized normalization for an (N, 63) array of hand landmarks.
+
+    Same logic as ``normalize_hand`` but applied to all frames at once
+    using NumPy broadcasting for significantly faster execution.
+    """
+    missing_mask = np.all(np.isclose(hands_batch, -1.0), axis=1) | (hands_batch[:, 0] == -1.0)
+
+    coords = hands_batch.reshape(-1, 21, 3)
+    wrist = coords[:, 0, :]
+    translated = coords - wrist[:, np.newaxis, :]
+
+    distances = np.linalg.norm(translated, axis=2)
+    max_dist = np.max(distances, axis=1, keepdims=True)
+    max_dist = np.maximum(max_dist, 1e-8)
+
+    scaled = translated / max_dist[:, :, np.newaxis]
+    scaled[missing_mask] = -1.0
+
+    return scaled.reshape(hands_batch.shape)
+
 def load_sequence_dataset(path: str = DATASET_PATH) -> tuple[np.ndarray, np.ndarray]:
     """Loads ``<label>/sequence_*.npy`` files from the collected sequence dataset."""
     if not os.path.isdir(path):

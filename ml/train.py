@@ -24,7 +24,7 @@ _IS_WORDS = MODEL_MODE == "words"
 DEFAULT_MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
 DEFAULT_MODEL_SAVE_PATH = os.path.join(
     DEFAULT_MODEL_DIR,
-    "sign_speak_words_lstm.keras" if _IS_WORDS else "sign_speak_lstm.keras",
+    "sign_speak_words_lstm.h5" if _IS_WORDS else "sign_speak_lstm.h5",
 )
 MODEL_SAVE_PATH = os.getenv(
     "WORDS_MODEL_SAVE_PATH" if _IS_WORDS else "MODEL_SAVE_PATH",

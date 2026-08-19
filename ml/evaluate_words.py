@@ -35,7 +35,7 @@ DATASET_PATH = os.path.join(
 
 MODEL_SAVE_PATH = os.path.join(
     MODEL_DIR,
-    "sign_speak_words_lstm.keras"
+    "sign_speak_words_lstm.h5"
 )
 
 LABEL_ENCODER_PATH = os.path.join(

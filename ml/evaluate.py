@@ -25,7 +25,7 @@ for path in env_paths:
         break
 
 DEFAULT_MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
-DEFAULT_MODEL_SAVE_PATH = os.path.join(DEFAULT_MODEL_DIR, "sign_speak_lstm.keras")
+DEFAULT_MODEL_SAVE_PATH = os.path.join(DEFAULT_MODEL_DIR, "sign_speak_lstm.h5")
 MODEL_SAVE_PATH = os.getenv("MODEL_SAVE_PATH", DEFAULT_MODEL_SAVE_PATH)
 
 DEFAULT_LABEL_ENCODER_PATH = os.path.join(DEFAULT_MODEL_DIR, "label_encoder.pkl")

@@ -26,7 +26,7 @@ SignSpeakAI/
   │     ├── utils.py
   │     ├── visualize.py
   │     ├── requirements.txt
-  │     ├── model/                        # sign_speak_lstm.keras, label_encoder.pkl, training_metadata.json
+  │     ├── model/                        # sign_speak_lstm.h5, label_encoder.pkl, training_metadata.json
   │     └── artifacts/
   ├── backend/
   │     ├── app/
@@ -108,7 +108,7 @@ pip install -r ml/requirements.txt
 # Build the train/val/test splits and the label encoder
 python ml/preprocess.py
 
-# Train the LSTM and save ml/model/sign_speak_lstm.keras
+# Train the LSTM and save ml/model/sign_speak_lstm.h5
 python ml/train.py
 
 # Evaluate (accuracy / confusion matrix / classification report)
@@ -138,7 +138,7 @@ MODEL_MODE=words python ml/preprocess.py
 MODEL_MODE=words python ml/train.py
 ```
 
-Once trained, the backend serves the words model automatically when the frontend selects **Words** (no extra config needed — `ModelLoaderService` loads `ml/model/sign_speak_words_lstm.keras` + `ml/model/label_encoder_words.pkl` on demand). While untrained, selecting **Words** returns `503`.
+Once trained, the backend serves the words model automatically when the frontend selects **Words** (no extra config needed — `ModelLoaderService` loads `ml/model/sign_speak_words_lstm.h5` + `ml/model/label_encoder_words.pkl` on demand). While untrained, selecting **Words** returns `503`.
 
 ### 5. Frontend UI
 

@@ -140,7 +140,7 @@ export default function Home() {
     {
       icon: <Cpu className="h-6 w-6 text-amber-400" />,
       title: "High-Speed API Backend",
-      desc: "TensorFlow-powered prediction endpoint served via FastAPI with sub-5ms model latency."
+      desc: "TensorFlow-powered prediction endpoint served via FastAPI with ~3ms model inference latency (optimized with tf.function)."
     }
   ];
 

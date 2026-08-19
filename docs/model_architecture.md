@@ -57,7 +57,7 @@ The training pipeline implemented three standard callbacks to regulate learning:
     *   Terminated training early when validation loss stopped improving, restoring weights to the optimal run to prevent overfitting.
 2.  **ModelCheckpoint**:
     *   `monitor='val_loss'`, `save_best_only=True`
-    *   Saved the best weights to `sign_speak_model.keras`.
+    *   Saved the best weights to `sign_speak_model.h5`.
 3.  **ReduceLROnPlateau**:
     *   `monitor='val_loss'`, `factor=0.5`, `patience=3`, `min_lr=1e-6`
     *   Scaled down the learning rate by half when validation loss plateaued, enabling fine-grained weight updates during final convergence.

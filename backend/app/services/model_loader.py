@@ -77,6 +77,7 @@ class ModelLoaderService:
                 cls._instance._initialized = False
                 cls._instance._models: Dict[str, "tf.keras.Model"] = {}
                 cls._instance._label_encoders: Dict[str, object] = {}
+                cls._instance._predict_fns: Dict[str, "tf.function"] = {}
             return cls._instance
 
     def initialize(self):
@@ -157,7 +158,13 @@ class ModelLoaderService:
             )
 
         with self._lock:
-            predictions = model(np.expand_dims(sequence, axis=0), training=False)
+            if mode not in self._predict_fns:
+                @tf.function
+                def _compiled_predict(x):
+                    return model(x, training=False)
+                self._predict_fns[mode] = _compiled_predict
+
+            predictions = self._predict_fns[mode](np.expand_dims(sequence, axis=0))
             return predictions.numpy()[0]
 
     def decode_label(self, class_index: int, mode: str = DEFAULT_MODE) -> str:

@@ -3,73 +3,111 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+from dotenv import load_dotenv
+
 from tensorflow.keras import Sequential
 from tensorflow.keras.callbacks import (
     EarlyStopping,
     ModelCheckpoint,
-    ReduceLROnPlateau,
+    ReduceLROnPlateau
 )
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 
-# ============================================================
-# PATHS
-# ============================================================
-
-PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
+from sklearn.metrics import (
+    confusion_matrix,
+    classification_report,
+    ConfusionMatrixDisplay
 )
 
-MODEL_DIR = os.path.join(
-    PROJECT_ROOT,
-    "ml",
+
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
+env_paths = [
+    os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        ".env"
+    ),
+    os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "backend",
+        ".env"
+    )
+]
+
+for path in env_paths:
+    if os.path.exists(path):
+        load_dotenv(path)
+        break
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+MODEL_MODE = os.getenv("MODEL_MODE", "numbers").lower()
+
+DEFAULT_MODEL_DIR = os.path.join(
+    os.path.dirname(__file__),
     "model"
 )
 
-DATASET_PATH = os.path.join(
-    PROJECT_ROOT,
+DEFAULT_MODEL_SAVE_PATH = os.path.join(
+    DEFAULT_MODEL_DIR,
+    "sign_speak_lstm.h5"
+)
+
+MODEL_SAVE_PATH = os.getenv(
+    "MODEL_SAVE_PATH",
+    DEFAULT_MODEL_SAVE_PATH
+)
+
+DEFAULT_DATASET_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
     "dataset",
-    "preprocessed_data_words.npz"
-)
-
-MODEL_SAVE_PATH = os.path.join(
-    MODEL_DIR,
-    "sign_speak_words_lstm.keras"
-)
-
-HISTORY_PATH = os.path.join(
-    MODEL_DIR,
-    "training_history_words.json"
+    "preprocessed_data.npz"
 )
 
 ARTIFACTS_DIR = os.path.join(
-    PROJECT_ROOT,
-    "ml",
-    "artifacts",
-    "words"
+    os.path.dirname(__file__),
+    "artifacts"
 )
 
 
 # ============================================================
-# LOAD PREPROCESSED DATA
+# LOAD DATA
 # ============================================================
 
-def load_preprocessed_data(path=DATASET_PATH):
+def load_preprocessed_data(path=DEFAULT_DATASET_PATH):
+    """
+    Loads training, validation and test datasets
+    from the preprocessed NPZ file.
+    """
 
     if not os.path.exists(path):
         raise FileNotFoundError(
-            f"Preprocessed word dataset not found at:\n{path}\n\n"
-            "Run preprocess_words.py first."
+            f"Preprocessed data not found at:\n{path}"
         )
 
     data = np.load(path)
 
+    X_train = data["X_train"]
+    y_train = data["y_train"]
+
+    X_val = data["X_val"]
+    y_val = data["y_val"]
+
+    X_test = data["X_test"]
+    y_test = data["y_test"]
+
     return (
-        data["X_train"],
-        data["y_train"],
-        data["X_val"],
-        data["y_val"],
-        data["X_test"],
-        data["y_test"],
+        X_train,
+        y_train,
+        X_val,
+        y_val,
+        X_test,
+        y_test
     )
 
 
@@ -79,8 +117,12 @@ def load_preprocessed_data(path=DATASET_PATH):
 
 def create_lstm_model(
     input_shape,
-    num_classes
+    num_classes=10
 ):
+    """
+    Creates an LSTM classifier for
+    sign-language number recognition.
+    """
 
     model = Sequential(
         [
@@ -103,12 +145,231 @@ def create_lstm_model(
             Dense(
                 num_classes,
                 activation="softmax"
-            ),
+            )
         ],
-        name="SignSpeak_Words_LSTM"
+        name="SignSpeak_LSTM"
     )
 
     return model
+
+
+# ============================================================
+# EVALUATE MODEL
+# ============================================================
+
+def evaluate_model(
+    model,
+    X_test,
+    y_test,
+    num_classes
+):
+    """
+    Evaluates the trained model using
+    completely unseen test data.
+    """
+
+    print("\n")
+    print("=" * 60)
+    print("                 FINAL TEST RESULTS")
+    print("=" * 60)
+
+    # --------------------------------------------------------
+    # Test loss and accuracy
+    # --------------------------------------------------------
+
+    test_loss, test_accuracy = model.evaluate(
+        X_test,
+        y_test,
+        verbose=1
+    )
+
+    print("\nTest Loss     :", f"{test_loss:.4f}")
+    print(
+        "Test Accuracy :",
+        f"{test_accuracy * 100:.2f}%"
+    )
+
+    # --------------------------------------------------------
+    # Predictions
+    # --------------------------------------------------------
+
+    print("\nGenerating predictions...")
+
+    y_pred_probability = model.predict(
+        X_test,
+        verbose=1
+    )
+
+    y_pred = np.argmax(
+        y_pred_probability,
+        axis=1
+    )
+
+    # --------------------------------------------------------
+    # Confusion matrix
+    # --------------------------------------------------------
+
+    cm = confusion_matrix(
+        y_test,
+        y_pred,
+        labels=np.arange(num_classes)
+    )
+
+    print("\n")
+    print("=" * 60)
+    print("                 CONFUSION MATRIX")
+    print("=" * 60)
+
+    print(cm)
+
+    # --------------------------------------------------------
+    # Classification report
+    # --------------------------------------------------------
+
+    class_names = [
+        str(i)
+        for i in range(num_classes)
+    ]
+
+    report = classification_report(
+        y_test,
+        y_pred,
+        labels=np.arange(num_classes),
+        target_names=class_names,
+        zero_division=0
+    )
+
+    print("\n")
+    print("=" * 60)
+    print("              CLASSIFICATION REPORT")
+    print("=" * 60)
+
+    print(report)
+
+    # --------------------------------------------------------
+    # Per-digit accuracy
+    # --------------------------------------------------------
+
+    print("\n")
+    print("=" * 60)
+    print("                 PER-DIGIT ACCURACY")
+    print("=" * 60)
+
+    digit_accuracy = {}
+
+    for digit in range(num_classes):
+
+        digit_indices = (
+            y_test == digit
+        )
+
+        total = np.sum(
+            digit_indices
+        )
+
+        if total == 0:
+            accuracy = 0
+        else:
+            correct = np.sum(
+                y_pred[digit_indices] == digit
+            )
+
+            accuracy = (
+                correct / total
+            )
+
+        digit_accuracy[str(digit)] = float(
+            accuracy
+        )
+
+        print(
+            f"Digit {digit}: "
+            f"{accuracy * 100:.2f}% "
+            f"({int(accuracy * total)}/{total})"
+        )
+
+    # --------------------------------------------------------
+    # Save evaluation results
+    # --------------------------------------------------------
+
+    evaluation_results = {
+        "test_loss": float(test_loss),
+        "test_accuracy": float(test_accuracy),
+        "test_accuracy_percentage": float(
+            test_accuracy * 100
+        ),
+        "per_digit_accuracy": digit_accuracy,
+        "confusion_matrix": cm.tolist()
+    }
+
+    evaluation_path = os.path.join(
+        ARTIFACTS_DIR,
+        "evaluation_results.json"
+    )
+
+    with open(
+        evaluation_path,
+        "w"
+    ) as f:
+
+        json.dump(
+            evaluation_results,
+            f,
+            indent=4
+        )
+
+    print(
+        f"\nEvaluation results saved to:\n"
+        f"{evaluation_path}"
+    )
+
+    # --------------------------------------------------------
+    # Save confusion matrix image
+    # --------------------------------------------------------
+
+    plt.figure(
+        figsize=(8, 8)
+    )
+
+    disp = ConfusionMatrixDisplay(
+        confusion_matrix=cm,
+        display_labels=class_names
+    )
+
+    disp.plot(
+        values_format="d",
+        ax=plt.gca()
+    )
+
+    plt.title(
+        "SignSpeak - Number Recognition Confusion Matrix"
+    )
+
+    plt.tight_layout()
+
+    confusion_path = os.path.join(
+        ARTIFACTS_DIR,
+        "confusion_matrix.png"
+    )
+
+    plt.savefig(
+        confusion_path,
+        dpi=150
+    )
+
+    plt.close()
+
+    print(
+        f"Confusion matrix saved to:\n"
+        f"{confusion_path}"
+    )
+
+    return (
+        test_loss,
+        test_accuracy,
+        y_pred,
+        cm
+    )
 
 
 # ============================================================
@@ -116,11 +377,10 @@ def create_lstm_model(
 # ============================================================
 
 def plot_curves(history):
-
-    os.makedirs(
-        ARTIFACTS_DIR,
-        exist_ok=True
-    )
+    """
+    Creates training/validation accuracy
+    and loss graphs.
+    """
 
     epochs_range = range(
         1,
@@ -128,7 +388,7 @@ def plot_curves(history):
     )
 
     # --------------------------------------------------------
-    # Accuracy
+    # Accuracy graph
     # --------------------------------------------------------
 
     plt.figure(
@@ -150,18 +410,24 @@ def plot_curves(history):
     )
 
     plt.title(
-        "SignSpeak Words - Training & Validation Accuracy"
+        "SignSpeak - Training & Validation Accuracy"
     )
 
     plt.xlabel("Epochs")
     plt.ylabel("Accuracy")
 
     plt.legend()
+
+    plt.grid(
+        True,
+        alpha=0.3
+    )
+
     plt.tight_layout()
 
     accuracy_path = os.path.join(
         ARTIFACTS_DIR,
-        "accuracy_curve_words.png"
+        "accuracy_curve.png"
     )
 
     plt.savefig(
@@ -172,11 +438,12 @@ def plot_curves(history):
     plt.close()
 
     print(
-        f"Saved accuracy curve to:\n{accuracy_path}"
+        f"Accuracy curve saved to:\n"
+        f"{accuracy_path}"
     )
 
     # --------------------------------------------------------
-    # Loss
+    # Loss graph
     # --------------------------------------------------------
 
     plt.figure(
@@ -198,18 +465,24 @@ def plot_curves(history):
     )
 
     plt.title(
-        "SignSpeak Words - Training & Validation Loss"
+        "SignSpeak - Training & Validation Loss"
     )
 
     plt.xlabel("Epochs")
     plt.ylabel("Loss")
 
     plt.legend()
+
+    plt.grid(
+        True,
+        alpha=0.3
+    )
+
     plt.tight_layout()
 
     loss_path = os.path.join(
         ARTIFACTS_DIR,
-        "loss_curve_words.png"
+        "loss_curve.png"
     )
 
     plt.savefig(
@@ -220,18 +493,19 @@ def plot_curves(history):
     plt.close()
 
     print(
-        f"Saved loss curve to:\n{loss_path}"
+        f"Loss curve saved to:\n"
+        f"{loss_path}"
     )
 
 
 # ============================================================
-# TRAIN WORD MODEL
+# MAIN TRAINING FUNCTION
 # ============================================================
 
-def train_words():
+def train_model():
 
     os.makedirs(
-        MODEL_DIR,
+        DEFAULT_MODEL_DIR,
         exist_ok=True
     )
 
@@ -240,15 +514,20 @@ def train_words():
         exist_ok=True
     )
 
-    print("\n" + "=" * 60)
-    print("        SIGNSPEAK WORD MODEL TRAINING")
+    print("\n")
     print("=" * 60)
+    print("           SIGNSPEAK LSTM MODEL TRAINING")
+    print("=" * 60)
+
+    print(
+        f"\nModel Mode: {MODEL_MODE}"
+    )
 
     # --------------------------------------------------------
     # Load data
     # --------------------------------------------------------
 
-    print("\nLoading preprocessed word dataset...")
+    print("\nLoading preprocessed data...")
 
     (
         X_train,
@@ -259,35 +538,39 @@ def train_words():
         y_test
     ) = load_preprocessed_data()
 
+    print("\nDataset shapes:")
+
     print(
-        f"Training data   : {X_train.shape}"
+        "Training   :",
+        X_train.shape,
+        y_train.shape
     )
 
     print(
-        f"Validation data : {X_val.shape}"
+        "Validation :",
+        X_val.shape,
+        y_val.shape
     )
 
     print(
-        f"Testing data    : {X_test.shape}"
+        "Testing    :",
+        X_test.shape,
+        y_test.shape
     )
 
     # --------------------------------------------------------
     # Validate shapes
     # --------------------------------------------------------
 
-    if X_train.ndim != 3:
-        raise ValueError(
-            f"Expected 3D training data, got {X_train.shape}"
-        )
+    if (
+        X_train.ndim != 3
+        or X_val.ndim != 3
+        or X_test.ndim != 3
+    ):
 
-    if X_val.ndim != 3:
         raise ValueError(
-            f"Expected 3D validation data, got {X_val.shape}"
-        )
-
-    if X_test.ndim != 3:
-        raise ValueError(
-            f"Expected 3D testing data, got {X_test.shape}"
+            "Expected input shape:\n"
+            "(samples, frames, features)"
         )
 
     if (
@@ -297,36 +580,44 @@ def train_words():
         X_train.shape[1:]
         != X_test.shape[1:]
     ):
+
         raise ValueError(
-            "Train, validation and test "
+            "Training, validation and test "
             "sequences must have the same shape."
         )
 
     # --------------------------------------------------------
-    # Determine model shape
+    # Number of classes
     # --------------------------------------------------------
+
+    num_classes = len(
+        np.unique(
+            np.concatenate(
+                (
+                    y_train,
+                    y_val,
+                    y_test
+                )
+            )
+        )
+    )
 
     input_shape = X_train.shape[1:]
 
-    all_labels = np.concatenate(
-        [
-            y_train,
-            y_val,
-            y_test
-        ]
-    )
+    print("\nInput shape :", input_shape)
+    print("Classes     :", num_classes)
 
-    num_classes = len(
-        np.unique(all_labels)
-    )
+    # --------------------------------------------------------
+    # Check number model
+    # --------------------------------------------------------
 
-    print(
-        f"\nInput shape : {input_shape}"
-    )
+    if num_classes != 10:
 
-    print(
-        f"Word classes: {num_classes}"
-    )
+        print(
+            "\nWARNING:"
+            f" Expected 10 classes for numbers, "
+            f"but found {num_classes}."
+        )
 
     # --------------------------------------------------------
     # Create model
@@ -346,6 +637,7 @@ def train_words():
     )
 
     print("\nModel Summary:")
+
     model.summary()
 
     # --------------------------------------------------------
@@ -363,16 +655,14 @@ def train_words():
         ModelCheckpoint(
             filepath=MODEL_SAVE_PATH,
             monitor="val_loss",
-            save_best_only=True,
-            verbose=1
+            save_best_only=True
         ),
 
         ReduceLROnPlateau(
             monitor="val_loss",
             factor=0.5,
             patience=3,
-            min_lr=1e-6,
-            verbose=1
+            min_lr=1e-6
         )
     ]
 
@@ -380,8 +670,9 @@ def train_words():
     # Train
     # --------------------------------------------------------
 
-    print("\n" + "=" * 60)
-    print("              TRAINING WORD MODEL")
+    print("\n")
+    print("=" * 60)
+    print("                   TRAINING")
     print("=" * 60)
 
     history = model.fit(
@@ -389,14 +680,14 @@ def train_words():
         X_train,
         y_train,
 
+        epochs=35,
+
+        batch_size=64,
+
         validation_data=(
             X_val,
             y_val
         ),
-
-        epochs=35,
-
-        batch_size=64,
 
         callbacks=callbacks,
 
@@ -404,11 +695,16 @@ def train_words():
     )
 
     # --------------------------------------------------------
-    # Save history
+    # Save training history
     # --------------------------------------------------------
 
+    history_path = os.path.join(
+        DEFAULT_MODEL_DIR,
+        "training_history.json"
+    )
+
     with open(
-        HISTORY_PATH,
+        history_path,
         "w"
     ) as f:
 
@@ -418,19 +714,43 @@ def train_words():
                     float(value)
                     for value in values
                 ]
-
                 for metric, values
                 in history.history.items()
             },
-
             f,
-
             indent=4
         )
 
     print(
         f"\nTraining history saved to:\n"
-        f"{HISTORY_PATH}"
+        f"{history_path}"
+    )
+
+    # --------------------------------------------------------
+    # Training summary
+    # --------------------------------------------------------
+
+    final_training_accuracy = (
+        history.history["accuracy"][-1]
+    )
+
+    final_validation_accuracy = (
+        history.history["val_accuracy"][-1]
+    )
+
+    print("\n")
+    print("=" * 60)
+    print("                 TRAINING SUMMARY")
+    print("=" * 60)
+
+    print(
+        f"\nTraining Accuracy   : "
+        f"{final_training_accuracy * 100:.2f}%"
+    )
+
+    print(
+        f"Validation Accuracy : "
+        f"{final_validation_accuracy * 100:.2f}%"
     )
 
     # --------------------------------------------------------
@@ -442,59 +762,67 @@ def train_words():
     )
 
     # --------------------------------------------------------
-    # Evaluate test data
+    # Final test evaluation
     # --------------------------------------------------------
 
-    print("\n" + "=" * 60)
-    print("              TEST SET EVALUATION")
-    print("=" * 60)
-
-    test_loss, test_accuracy = model.evaluate(
+    (
+        test_loss,
+        test_accuracy,
+        y_pred,
+        confusion
+    ) = evaluate_model(
+        model,
         X_test,
         y_test,
-        verbose=1
+        num_classes
     )
 
-    print(
-        f"\nTest Loss     : {test_loss:.4f}"
-    )
+    # --------------------------------------------------------
+    # Final summary
+    # --------------------------------------------------------
 
-    print(
-        f"Test Accuracy : {test_accuracy:.4f}"
-    )
-
-    print(
-        f"Test Accuracy : {test_accuracy * 100:.2f}%"
-    )
-
-    print("\n" + "=" * 60)
-    print("       WORD MODEL TRAINING COMPLETED")
+    print("\n")
+    print("=" * 60)
+    print("                 FINAL SUMMARY")
     print("=" * 60)
 
     print(
-        f"\nModel saved to:\n{MODEL_SAVE_PATH}"
+        f"\nTraining Accuracy   : "
+        f"{final_training_accuracy * 100:.2f}%"
     )
 
-    return (
-        model,
-        history.history
+    print(
+        f"Validation Accuracy : "
+        f"{final_validation_accuracy * 100:.2f}%"
     )
+
+    print(
+        f"TEST ACCURACY       : "
+        f"{test_accuracy * 100:.2f}%"
+    )
+
+    print(
+        f"\nModel saved to:\n"
+        f"{MODEL_SAVE_PATH}"
+    )
+
+    print("\nTraining and evaluation completed successfully!")
 
 
 # ============================================================
-# MAIN
+# RUN
 # ============================================================
 
 if __name__ == "__main__":
 
     try:
 
-        train_words()
+        train_model()
 
     except Exception as e:
 
         print(
-            "\nError in word model training pipeline:"
+            "\nERROR:"
         )
 
         print(e)
