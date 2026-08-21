@@ -57,16 +57,37 @@ def load_preprocessed_data(path=DEFAULT_DATASET_PATH):
     )
 
 def create_lstm_model(input_shape: tuple[int, int] = (30, 127), num_classes: int = 10) -> Sequential:
-    """Creates an LSTM classifier for landmark sequences."""
-    model = Sequential([
-        Input(shape=input_shape),
-        LSTM(64, return_sequences=False),
-        Dropout(0.2),
-        Dense(64, activation='relu'),
-        Dropout(0.2),
-        Dense(num_classes, activation='softmax')
-    ], name="SignSpeak_LSTM")
-    return model
+    """Creates an LSTM classifier for landmark sequences.
+
+    Capacity scales with the class count. The single LSTM(64) below was sized
+    for 10 digits; on 33 word classes it underfit badly — training accuracy
+    plateaued around 64% with validation only 4 points behind, meaning the
+    model could not fit even the data it had seen. That is a capacity problem,
+    not a data or regularisation one, so the wider variant stacks two
+    recurrent layers and widens the head.
+    """
+    if num_classes > 15:
+        layers = [
+            Input(shape=input_shape),
+            LSTM(160, return_sequences=True),
+            Dropout(0.3),
+            LSTM(96, return_sequences=False),
+            Dropout(0.3),
+            Dense(128, activation='relu'),
+            Dropout(0.3),
+            Dense(num_classes, activation='softmax'),
+        ]
+    else:
+        layers = [
+            Input(shape=input_shape),
+            LSTM(64, return_sequences=False),
+            Dropout(0.2),
+            Dense(64, activation='relu'),
+            Dropout(0.2),
+            Dense(num_classes, activation='softmax'),
+        ]
+
+    return Sequential(layers, name="SignSpeak_LSTM")
 
 def train_and_compare():
     """Trains the LSTM model, saves checkpoints and training charts."""
@@ -101,15 +122,24 @@ def train_and_compare():
         metrics=['accuracy']
     )
 
+    # Track val_accuracy, not val_loss. The two diverge here: val_loss bottomed
+    # at epoch 35 and drifted while val_accuracy kept climbing for another 17
+    # epochs (the model grows overconfident on the cases it still gets wrong,
+    # which costs loss but not accuracy). Selecting on loss silently discarded
+    # the more accurate weights. Accuracy is what the demo is judged on.
     final_callbacks = [
-        EarlyStopping(monitor='val_loss', patience=8, restore_best_weights=True),
-        ModelCheckpoint(filepath=MODEL_SAVE_PATH, monitor='val_loss', save_best_only=True),
-        ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6)
+        EarlyStopping(monitor='val_accuracy', mode='max', patience=25,
+                      restore_best_weights=True),
+        ModelCheckpoint(filepath=MODEL_SAVE_PATH, monitor='val_accuracy', mode='max',
+                        save_best_only=True),
+        ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=6, min_lr=1e-6)
     ]
 
     final_history = final_model.fit(
         X_train, y_train,
-        epochs=35,  # Allow longer training for final convergence
+        # The previous 35-epoch cap cut training off while val_loss was still
+        # falling — EarlyStopping never fired. Let the callback decide instead.
+        epochs=300,
         batch_size=64,
         validation_data=(X_val, y_val),
         callbacks=final_callbacks,

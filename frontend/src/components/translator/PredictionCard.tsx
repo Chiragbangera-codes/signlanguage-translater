@@ -12,7 +12,8 @@ export const PredictionCard: React.FC = () => {
     isTranslating,
     cameraFps,
     apiHealthy,
-    activeMode
+    activeMode,
+    inferenceSource
   } = useTranslatorStore();
 
   return (
@@ -75,7 +76,16 @@ export const PredictionCard: React.FC = () => {
         <div className="flex justify-between pt-1">
           <span className="text-zinc-600">Model:</span>
           <span className="text-zinc-300 font-bold">
-            {activeMode === "numbers" ? "Numbers (digits)" : "Words (alphabet)"}
+            {activeMode === "numbers" ? "Numbers (digits)" : "Words"}
+            {inferenceSource === "local" && (
+              <span className="ml-1.5 text-emerald-400">on-device</span>
+            )}
+            {inferenceSource === "api" && (
+              <span className="ml-1.5 text-amber-400">via API</span>
+            )}
+            {inferenceSource === null && (
+              <span className="ml-1.5 text-zinc-600">idle</span>
+            )}
           </span>
         </div>
       </div>

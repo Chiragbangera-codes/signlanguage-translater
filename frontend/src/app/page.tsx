@@ -37,6 +37,7 @@ import { StatusBar } from "../components/translator/StatusBar";
 import { SettingsPanel } from "../components/translator/SettingsPanel";
 import { useTranslatorStore } from "../store/useTranslatorStore";
 import { speakSentence } from "../lib/speech";
+import { getLanguage } from "../lib/languages";
 
 export default function Home() {
   const [showDashboard, setShowDashboard] = useState(false);
@@ -69,13 +70,17 @@ export default function Home() {
         e.preventDefault();
         const target = store.meaningfulSentence || store.constructedSentence;
         if (target.trim() && "speechSynthesis" in window) {
-          speakSentence(target, store.selectedVoiceName, store.speechRate);
+          // Raw glosses are English; only a constructed sentence is translated.
+          const bcp47 = store.meaningfulSentence
+            ? getLanguage(store.targetLanguage).bcp47
+            : "en-US";
+          speakSentence(target, store.selectedVoiceName, store.speechRate, bcp47);
           store.setStatusBarMessage("Speaking sentence via shortcut...");
         }
       } else if (e.code === "KeyC") {
         if (store.constructedSentence.trim()) {
           e.preventDefault();
-          store.constructMeaningfulSentence();
+          void store.constructMeaningfulSentence();
         }
       } else if (e.code === "Escape") {
         e.preventDefault();

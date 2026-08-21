@@ -1,0 +1,100 @@
+# Curated vocabulary for SignSpeak.
+#
+# Chosen to COMPOSE — these words combine into many sentences rather than
+# covering many topics shallowly, which is what the sentence constructor needs
+# to produce long output. Keep the list short: fewer classes means higher
+# accuracy and a more reliable demo.
+#
+# Import with:
+#   python scripts/import_dataset.py --mode parquet --input <dataset> \
+#       --words-file scripts/wordlist.txt --clear
+#
+# Run --list-signs against your dataset first; anything not present is skipped
+# with a warning, so it is safe to leave optimistic entries here.
+
+# --- people -----------------------------------------------------------
+i
+you
+we
+they
+man
+woman
+mother
+father
+friend
+teacher
+doctor
+
+# --- verbs ------------------------------------------------------------
+want
+need
+have
+go
+come
+help
+give
+eat
+drink
+sleep
+work
+study
+play
+stop
+finish
+understand
+know
+like
+love
+feel
+
+# --- things -----------------------------------------------------------
+water
+food
+milk
+home
+school
+hospital
+book
+phone
+money
+time
+name
+
+# --- questions --------------------------------------------------------
+who
+what
+where
+when
+why
+how
+
+# --- descriptions -----------------------------------------------------
+good
+bad
+happy
+sad
+sick
+hungry
+thirsty
+tired
+hot
+cold
+big
+small
+
+# --- social -----------------------------------------------------------
+hello
+bye
+please
+thankyou
+sorry
+yes
+no
+more
+again
+
+# --- time -------------------------------------------------------------
+now
+today
+tomorrow
+yesterday

@@ -145,7 +145,7 @@ def preprocess_and_split(sequences: np.ndarray, labels: np.ndarray, test_size=0.
         pickle.dump(le, f)
     print(f"Label encoder saved to: {LABEL_ENCODER_PATH}")
 
-    # Split: Train + Val (90%) and Test (10%)
+    # Split: Train + Val (90%) and Test (10%)  [augmentation applied after]
     print(f"Splitting dataset: test_size={test_size}, val_size={val_size}...")
     X_train_val, X_test, y_train_val, y_test = train_test_split(
         X, y, test_size=test_size, random_state=random_state, stratify=y
@@ -159,6 +159,138 @@ def preprocess_and_split(sequences: np.ndarray, labels: np.ndarray, test_size=0.
 
     return X_train, y_train, X_val, y_val, X_test, y_test, le
 
+
+# ============================================================
+# TRAINING-SET AUGMENTATION
+# ============================================================
+
+AUGMENT_FACTOR = int(os.getenv("AUGMENT_FACTOR", "3"))
+
+# Every transform below must survive normalize_hand(), which moves the wrist to
+# the origin and divides by hand size. That erases absolute translation and
+# scale, so translating or rescaling a sequence would be silently undone. What
+# survives is mirroring, rotation, time warping and per-coordinate jitter.
+
+
+def _hand_present(hand_63: np.ndarray) -> bool:
+    """A hand slot is padding when every value is the -1.0 sentinel."""
+    return not np.all(np.isclose(hand_63, -1.0))
+
+
+def _apply_to_hands(sequence: np.ndarray, fn) -> np.ndarray:
+    """Runs `fn` over each present hand slot, leaving padded slots untouched."""
+    out = sequence.copy()
+    for frame in range(out.shape[0]):
+        for start in (1, 64):
+            hand = out[frame, start:start + 63]
+            if _hand_present(hand):
+                out[frame, start:start + 63] = fn(hand)
+    return out
+
+
+def augment_mirror(sequence: np.ndarray) -> np.ndarray:
+    """Mirrors the signer horizontally: a right-handed sign becomes left-handed.
+
+    Signers use either dominant hand, so this is a genuine variation rather
+    than a distortion. Coordinates are wrist-centred post-normalisation, so
+    negating x mirrors each hand's shape.
+
+    For two-handed frames the slots must swap as well. Slot A holds whichever
+    hand was leftmost in the camera frame, and mirroring the scene makes the
+    other hand leftmost. Negating x without swapping would produce a pose that
+    cannot physically occur, and the browser (which assigns slots from raw
+    positions) would never present one like it.
+    """
+    def flip(hand):
+        coords = hand.reshape(21, 3).copy()
+        coords[:, 0] *= -1.0
+        return coords.reshape(-1)
+
+    out = _apply_to_hands(sequence, flip)
+
+    for frame in range(out.shape[0]):
+        slot_a = out[frame, 1:64]
+        slot_b = out[frame, 64:127]
+        if _hand_present(slot_a) and _hand_present(slot_b):
+            a_copy = slot_a.copy()
+            out[frame, 1:64] = slot_b
+            out[frame, 64:127] = a_copy
+
+    return out
+
+
+def augment_rotate(sequence: np.ndarray, max_degrees: float = 15.0) -> np.ndarray:
+    """Rotates the hand in the image plane — models camera tilt and wrist angle.
+
+    One angle for the whole sequence, so the motion stays coherent.
+    """
+    theta = np.deg2rad(np.random.uniform(-max_degrees, max_degrees))
+    cos, sin = np.cos(theta), np.sin(theta)
+
+    def rotate(hand):
+        coords = hand.reshape(21, 3).copy()
+        x, y = coords[:, 0].copy(), coords[:, 1].copy()
+        coords[:, 0] = x * cos - y * sin
+        coords[:, 1] = x * sin + y * cos
+        return coords.reshape(-1)
+    return _apply_to_hands(sequence, rotate)
+
+
+def augment_jitter(sequence: np.ndarray, sigma: float = 0.02) -> np.ndarray:
+    """Adds small per-coordinate noise, modelling landmark detection wobble."""
+    def jitter(hand):
+        return hand + np.random.normal(0.0, sigma, size=hand.shape).astype(hand.dtype)
+    return _apply_to_hands(sequence, jitter)
+
+
+def augment_time_warp(sequence: np.ndarray, strength: float = 0.25) -> np.ndarray:
+    """Resamples the sequence along a randomly warped timeline.
+
+    Models a signer moving faster or slower through parts of the gesture.
+    Nearest-frame sampling keeps padded frames intact — interpolating across a
+    -1.0 sentinel would fabricate coordinates.
+    """
+    n = sequence.shape[0]
+    base = np.linspace(0.0, 1.0, n)
+    offsets = np.random.uniform(-strength, strength, size=n) / n
+    warped = np.clip(np.cumsum(np.diff(base, prepend=0.0) + offsets), 0.0, 1.0)
+    warped = warped / max(warped[-1], 1e-6)
+    indices = np.clip(np.rint(warped * (n - 1)).astype(int), 0, n - 1)
+    return sequence[indices]
+
+
+def augment_training_set(X: np.ndarray, y: np.ndarray, factor: int,
+                         random_state: int = 42) -> tuple[np.ndarray, np.ndarray]:
+    """Expands the training split `factor`x. Validation and test stay untouched.
+
+    Augmenting only the training split is the point: val/test must keep
+    measuring performance on unmodified data.
+    """
+    if factor <= 1:
+        return X, y
+
+    np.random.seed(random_state)
+    augmented = [X]
+    labels = [y]
+
+    for copy in range(factor - 1):
+        batch = np.empty_like(X)
+        for i, sequence in enumerate(X):
+            out = sequence
+            # Mirror half the copies — a signer is left- or right-handed, not
+            # partially so, hence a per-sequence coin flip rather than a blend.
+            if np.random.rand() < 0.5:
+                out = augment_mirror(out)
+            out = augment_time_warp(out)
+            out = augment_rotate(out)
+            out = augment_jitter(out)
+            batch[i] = out
+        augmented.append(batch)
+        labels.append(y)
+        print(f"  augmented copy {copy + 1}/{factor - 1} generated")
+
+    return np.concatenate(augmented, axis=0), np.concatenate(labels, axis=0)
+
 if __name__ == "__main__":
     try:
         print(f"Loading sequence dataset from {DATASET_PATH}...")
@@ -166,6 +298,12 @@ if __name__ == "__main__":
         sequences, labels = load_sequence_dataset()
 
         X_train, y_train, X_val, y_val, X_test, y_test, le = preprocess_and_split(sequences, labels)
+
+        original_train_size = X_train.shape[0]
+        if AUGMENT_FACTOR > 1:
+            print(f"Augmenting training split {AUGMENT_FACTOR}x "
+                  f"(set AUGMENT_FACTOR=1 to disable)...")
+            X_train, y_train = augment_training_set(X_train, y_train, AUGMENT_FACTOR)
 
         # Save preprocessed splits for Phase 2C decoupling
         npz_dir = os.path.dirname(DEFAULT_DATASET_PATH)
@@ -183,7 +321,8 @@ if __name__ == "__main__":
         print("          PREPROCESSING REPORT STATISTICS")
         print("=" * 60)
         print(f"Total Sequences      : {len(sequences)}")
-        print(f"Training Set Size    : {X_train.shape[0]} ({X_train.shape[0]/len(sequences)*100:.1f}%)")
+        print(f"Training Set Size    : {X_train.shape[0]} "
+              f"({original_train_size} original x{AUGMENT_FACTOR} augmented)")
         print(f"Validation Set Size  : {X_val.shape[0]} ({X_val.shape[0]/len(sequences)*100:.1f}%)")
         print(f"Testing Set Size     : {X_test.shape[0]} ({X_test.shape[0]/len(sequences)*100:.1f}%)")
         print(f"Sequence Shape       : {X_train.shape[1:]}")

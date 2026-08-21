@@ -16,10 +16,20 @@ frontend/.vercel/
 
 # Python dependencies and environments
 backend/venv/
+env-*/
+.env-*/
 backend/.venv/
+env-*/
+.env-*/
 venv/
+env-*/
+.env-*/
 .venv/
+env-*/
+.env-*/
 env/
+env-*/
+.env-*/
 .env
 backend/.env
 **/__pycache__/
@@ -39,3 +49,18 @@ desktop.ini
 # ML training models and datasets (large files)
 ml/model/
 dataset/*.csv
+
+# NOTE: frontend/public/model/ is deliberately NOT ignored. Vercel builds from
+# git, so the exported TF.js model must be committed or the deployed app finds
+# no model and silently falls back to the slow API path.
+
+# Dataset archives produced by scripts/import_dataset.py
+dataset/*.zip
+scripts/*.zip
+
+# Local AI-assistant tooling and notes
+.claude/
+CLAUDE.md
+AGENTS.md
+**/CLAUDE.md
+**/AGENTS.md

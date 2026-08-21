@@ -64,25 +64,61 @@ export function expandDigits(text: string): string {
   });
 }
 
+/**
+ * Picks a voice for `bcp47`, preferring an exact locale match, then any voice
+ * for the same base language. Returns null when the browser ships no voice for
+ * that language — the utterance still carries `lang`, so some platforms cope.
+ */
+export function findVoiceForLanguage(
+  voices: SpeechSynthesisVoice[],
+  bcp47: string
+): SpeechSynthesisVoice | null {
+  const target = bcp47.toLowerCase();
+  const base = target.split("-")[0];
+
+  return (
+    voices.find((voice) => voice.lang.toLowerCase().replace("_", "-") === target) ??
+    voices.find((voice) => voice.lang.toLowerCase().split(/[-_]/)[0] === base) ??
+    null
+  );
+}
+
+/**
+ * Speaks `sentence`. When `bcp47` is given, a voice for that language wins over
+ * `voiceName` — the configured voice is almost always English and would read a
+ * Hindi or Tamil sentence as gibberish.
+ */
 export function speakSentence(
   sentence: string,
   voiceName: string | null | undefined,
-  rate: number
+  rate: number,
+  bcp47: string = "en-US"
 ): boolean {
   if (!sentence.trim()) return false;
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return false;
 
   window.speechSynthesis.cancel();
 
-  const spoken = expandDigits(sentence).toLowerCase();
+  const isEnglish = bcp47.toLowerCase().startsWith("en");
+
+  // Digit expansion and lowercasing are English-specific: "100" is already
+  // read correctly by a Hindi voice, and lowercasing breaks nothing in
+  // non-cased scripts but does strip meaning from cased non-English text.
+  const spoken = isEnglish ? expandDigits(sentence).toLowerCase() : sentence;
   const utterance = new SpeechSynthesisUtterance(spoken);
 
   const voices = window.speechSynthesis.getVoices();
-  const targetVoice = voices.find((voice) => voice.name === voiceName);
+  const languageVoice = findVoiceForLanguage(voices, bcp47);
+  const namedVoice = voices.find((voice) => voice.name === voiceName) ?? null;
+
+  // For a non-English target the language match wins; for English the user's
+  // configured voice wins.
+  const targetVoice = isEnglish ? namedVoice ?? languageVoice : languageVoice ?? namedVoice;
   if (targetVoice) {
     utterance.voice = targetVoice;
   }
 
+  utterance.lang = targetVoice?.lang || bcp47;
   utterance.rate = rate;
   utterance.pitch = 1.0;
   window.speechSynthesis.speak(utterance);

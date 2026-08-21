@@ -46,35 +46,39 @@ def list_available_cameras(max_index: int) -> None:
 
 
 def landmarks_to_frame(results) -> np.ndarray | None:
-    """Converts one MediaPipe result into the feature order used by the app."""
+    """Converts one MediaPipe result into the feature order used by the app.
+
+    Hand-slot convention: slot A is the hand with the smaller mean x, slot B is
+    the other; a lone hand always takes slot A. Purely geometric — it never
+    reads MediaPipe's handedness labels, which flip depending on whether the
+    source image was mirrored. scripts/import_dataset.py and CameraCard.tsx
+    apply the identical rule, so recorded data, imported data and live
+    inference all agree.
+    """
     landmarks_list = results.multi_hand_landmarks or []
-    handedness_list = results.multi_handedness or []
     if not landmarks_list:
         return None
 
-    left_hand = np.full(63, -1.0, dtype=np.float32)
-    right_hand = np.full(63, -1.0, dtype=np.float32)
+    slot_a = np.full(63, -1.0, dtype=np.float32)
+    slot_b = np.full(63, -1.0, dtype=np.float32)
     uses_two_hands = 1.0 if len(landmarks_list) >= 2 else 0.0
 
-    if len(landmarks_list) == 1:
-        left_hand = np.asarray(
-            [value for landmark in landmarks_list[0].landmark for value in (landmark.x, landmark.y, landmark.z)],
+    def flatten(landmarks) -> np.ndarray:
+        return np.asarray(
+            [value for landmark in landmarks.landmark for value in (landmark.x, landmark.y, landmark.z)],
             dtype=np.float32,
         )
-    else:
-        for landmarks, handedness in zip(landmarks_list[:2], handedness_list[:2]):
-            coords = np.asarray(
-                [value for landmark in landmarks.landmark for value in (landmark.x, landmark.y, landmark.z)],
-                dtype=np.float32,
-            )
-            label = handedness.classification[0].label
-            # Match the non-mirrored MediaPipe mapping used by CameraCard.tsx.
-            if label == "Right":
-                left_hand = coords
-            elif label == "Left":
-                right_hand = coords
 
-    return np.concatenate(([uses_two_hands], left_hand, right_hand)).reshape(FEATURES_PER_FRAME)
+    if len(landmarks_list) == 1:
+        slot_a = flatten(landmarks_list[0])
+    else:
+        ordered = sorted(
+            (flatten(landmarks) for landmarks in landmarks_list[:2]),
+            key=lambda coords: float(np.mean(coords[0::3])),
+        )
+        slot_a, slot_b = ordered[0], ordered[1]
+
+    return np.concatenate(([uses_two_hands], slot_a, slot_b)).reshape(FEATURES_PER_FRAME)
 
 
 def next_sequence_path(label_dir: Path) -> Path:

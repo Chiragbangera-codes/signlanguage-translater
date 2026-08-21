@@ -1,5 +1,8 @@
 import { create } from "zustand";
 import { constructMeaningfulSentence } from "../lib/grammar";
+import { requestSentence } from "../lib/sentence";
+import type { SentenceStyle } from "../lib/sentence";
+import { DEFAULT_LANGUAGE_CODE, getLanguage } from "../lib/languages";
 
 export interface PredictionItem {
   label: string;
@@ -7,6 +10,13 @@ export interface PredictionItem {
 }
 
 export type TranslatorMode = "numbers" | "words";
+
+/** An archived sentence plus the language it was generated in, so replaying it
+ *  picks the right synthesizer voice. */
+export interface HistoryEntry {
+  text: string;
+  language: string;
+}
 
 interface TranslatorState {
   // Webcam & Pipeline status
@@ -25,7 +35,15 @@ interface TranslatorState {
   currentWord: string;
   constructedSentence: string;
   meaningfulSentence: string | null;
-  history: string[];
+  /** English reference text when the sentence was translated. */
+  englishSentence: string | null;
+  /** Language `meaningfulSentence` is actually written in — not the requested
+   *  target, which differs whenever the offline fallback ran. */
+  sentenceLanguage: string;
+  isConstructing: boolean;
+  targetLanguage: string;
+  sentenceStyle: SentenceStyle;
+  history: HistoryEntry[];
 
   // Settings State
   confidenceThreshold: number; // 0-100%
@@ -37,6 +55,8 @@ interface TranslatorState {
   // Performance stats state
   cameraFps: number;
   apiHealthy: boolean;
+  /** Which path served the last prediction: on-device, remote API, or neither yet. */
+  inferenceSource: "local" | "api" | null;
 
   // Actions
   setWebcamActive: (active: boolean) => void;
@@ -58,12 +78,14 @@ interface TranslatorState {
   commitWordToSentence: () => void;
   addWordToSentence: (word: string) => void;
   clearSentence: () => void;
-  addSentenceToHistory: (sentence: string) => void;
+  addSentenceToHistory: (sentence: string, language?: string) => void;
   clearHistory: () => void;
 
   // Grammar correction
   setMeaningfulSentence: (sentence: string | null) => void;
-  constructMeaningfulSentence: () => void;
+  constructMeaningfulSentence: () => Promise<void>;
+  setTargetLanguage: (code: string) => void;
+  setSentenceStyle: (style: SentenceStyle) => void;
 
   // Settings & Performance Actions
   setConfidenceThreshold: (val: number) => void;
@@ -73,9 +95,10 @@ interface TranslatorState {
   setActiveMode: (mode: TranslatorMode) => void;
   setCameraFps: (fps: number) => void;
   setApiHealthy: (healthy: boolean) => void;
+  setInferenceSource: (source: "local" | "api" | null) => void;
 }
 
-export const useTranslatorStore = create<TranslatorState>((set) => ({
+export const useTranslatorStore = create<TranslatorState>((set, get) => ({
   // Initial states
   webcamActive: false,
   isTranslating: false,
@@ -90,22 +113,33 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
   currentWord: "",
   constructedSentence: "",
   meaningfulSentence: null,
+  englishSentence: null,
+  sentenceLanguage: DEFAULT_LANGUAGE_CODE,
+  isConstructing: false,
+  targetLanguage: DEFAULT_LANGUAGE_CODE,
+  sentenceStyle: "natural",
   history: [
-    "HELLO WORLD",
-    "WELCOME TO SIGNSPEAK AI",
-    "INDIAN SIGN LANGUAGE IS AMAZING"
+    { text: "HELLO WORLD", language: "en" },
+    { text: "WELCOME TO SIGNSPEAK AI", language: "en" },
+    { text: "INDIAN SIGN LANGUAGE IS AMAZING", language: "en" }
   ],
 
   // Default settings
-  confidenceThreshold: 80,
+  // A 33-class softmax rarely exceeds 80% even when correct, so the old gate
+  // discarded most valid predictions and the app felt dead. The stabilizer
+  // (6-of-10 majority + 700ms hold) is what filters noise, not this threshold.
+  confidenceThreshold: 55,
   speechRate: 1.0,
   selectedVoiceName: null,
   cameraMirrored: true,
-  activeMode: "numbers",
+  // Words is the mode with a trained model and an exported on-device bundle;
+  // Numbers has neither, so defaulting to it silently fell back to the API.
+  activeMode: "words",
 
   // Performance stats
   cameraFps: 0,
   apiHealthy: true,
+  inferenceSource: null,
 
   // Actions
   setWebcamActive: (active) => set(() => ({
@@ -184,6 +218,8 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
   
   clearSentence: () => set({ 
     constructedSentence: "",
+    meaningfulSentence: null,
+    englishSentence: null,
     statusBarMessage: "Sentence cleared."
   }),
 
@@ -200,8 +236,8 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
     };
   }),
   
-  addSentenceToHistory: (sentence) => set((state) => ({
-    history: [sentence, ...state.history],
+  addSentenceToHistory: (sentence, language = "en") => set((state) => ({
+    history: [{ text: sentence, language }, ...state.history],
     statusBarMessage: "Sentence committed to history."
   })),
   
@@ -212,24 +248,81 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
 
   setMeaningfulSentence: (sentence) => set({
     meaningfulSentence: sentence,
+    englishSentence: null,
+    sentenceLanguage: "en",
     statusBarMessage: sentence
       ? "Meaningful sentence constructed."
       : "Meaningful sentence cleared."
   }),
 
-  constructMeaningfulSentence: () => set((state) => {
-    if (!state.constructedSentence.trim()) {
-      return {
-        meaningfulSentence: null,
-        statusBarMessage: "No words to construct a sentence from."
-      };
-    }
-    const result = constructMeaningfulSentence(state.constructedSentence);
-    return {
-      meaningfulSentence: result,
-      statusBarMessage: "Sign words converted to meaningful sentence."
-    };
+  setTargetLanguage: (code) => set({
+    targetLanguage: code,
+    statusBarMessage: `Output language set to ${getLanguage(code).name}.`
   }),
+
+  setSentenceStyle: (style) => set({
+    sentenceStyle: style,
+    statusBarMessage:
+      style === "expanded"
+        ? "Sentence style: expanded (fuller, multi-clause output)."
+        : "Sentence style: natural (matches the signed words)."
+  }),
+
+  // Sends the glosses to the backend, which builds a natural sentence of any
+  // length and translates it. Falls back to the local rule table when the
+  // service is unreachable or unconfigured, so the app still works offline.
+  constructMeaningfulSentence: async () => {
+    const state = get();
+    const raw = state.constructedSentence.trim();
+
+    if (!raw) {
+      set({
+        meaningfulSentence: null,
+        englishSentence: null,
+        statusBarMessage: "No words to construct a sentence from."
+      });
+      return;
+    }
+
+    if (state.isConstructing) return;
+
+    set({ isConstructing: true, statusBarMessage: "Constructing sentence..." });
+
+    try {
+      const result = await requestSentence(
+        raw,
+        state.targetLanguage,
+        state.sentenceStyle,
+        state.activeMode
+      );
+
+      set({
+        meaningfulSentence: result.sentence,
+        sentenceLanguage: result.language,
+        englishSentence:
+          result.language === "en" || result.english === result.sentence
+            ? null
+            : result.english,
+        isConstructing: false,
+        statusBarMessage: `Sentence constructed in ${result.languageName} (${Math.round(result.processingTimeMs)}ms).`
+      });
+    } catch {
+      // Offline fallback: local rules, English only.
+      const fallback = constructMeaningfulSentence(raw);
+      const isEnglish = state.targetLanguage === "en";
+
+      set({
+        meaningfulSentence: fallback,
+        // The offline rules only produce English, whatever was requested.
+        sentenceLanguage: "en",
+        englishSentence: null,
+        isConstructing: false,
+        statusBarMessage: isEnglish
+          ? "Sentence service unavailable — used offline grammar rules."
+          : `Sentence service unavailable — showing English instead of ${getLanguage(state.targetLanguage).name}.`
+      });
+    }
+  },
 
   // Settings & Performance Actions
   setConfidenceThreshold: (val) => set({ confidenceThreshold: val }),
@@ -241,8 +334,9 @@ export const useTranslatorStore = create<TranslatorState>((set) => ({
     statusBarMessage:
       mode === "numbers"
         ? "Mode switched to Numbers (digits 0-9)."
-        : "Mode switched to Words (alphabet). The words model is not trained yet."
+        : "Mode switched to Words (word signs)."
   }),
   setCameraFps: (fps) => set({ cameraFps: fps }),
-  setApiHealthy: (healthy) => set({ apiHealthy: healthy })
+  setApiHealthy: (healthy) => set({ apiHealthy: healthy }),
+  setInferenceSource: (source) => set({ inferenceSource: source })
 }));

@@ -31,8 +31,11 @@ SignSpeakAI/
   ├── backend/
   │     ├── app/
   │     │     ├── api/v1/predict.py       # POST /api/v1/predict  (accepts optional "mode")
+  │     │     ├── api/v1/sentence.py      # POST /api/v1/sentence (sentence + translation)
   │     │     ├── schemas/predict.py
+  │     │     ├── schemas/sentence.py
   │     │     ├── services/model_loader.py
+  │     │     ├── services/sentence_service.py
   │     │     ├── core/
   │     │     ├── models/
   │     │     ├── utils/
@@ -45,12 +48,16 @@ SignSpeakAI/
   │         ├── app/
   │         ├── components/translator/    # Controls, CameraCard, PredictionCard, SentenceBuilder, HistoryPanel, ...
   │         ├── store/useTranslatorStore.ts
-  │         ├── lib/speech.ts             # digit -> number-word text-to-speech
+  │         ├── lib/speech.ts             # language-aware text-to-speech
+  │         ├── lib/sentence.ts           # POST /sentence client
+  │         ├── lib/languages.ts          # output languages + speech locales
+  │         ├── lib/grammar.ts            # offline fallback sentence rules
   │         └── styles/
   ├── scripts/
   │     └── collect_sequences.py          # collect MediaPipe gesture sequences
   ├── tests/
-  │     └── test_api.py
+  │     ├── test_api.py
+  │     └── test_sentence_api.py
   ├── .gitignore
   └── README.md
 ```
@@ -58,10 +65,12 @@ SignSpeakAI/
 ## Features
 
 - **Real-Time Webcam Translation** — extracts hand landmarks in the browser via MediaPipe.
-- **Dual-Hand Inference** — uses a 127-feature model supporting single/double hand gestures.
+- **Landmark Inference** — a 127-feature frame (`[uses_two_hands, hand_a, hand_b]`) drives an LSTM over 30-frame sequences. The layout carries two hands, but the browser currently tracks one (`maxNumHands: 1`) to match the single-hand training data.
 - **Prediction Stabilization** — prediction buffering, majority voting, 700 ms hold detection, and cooldown locks.
 - **Numbers / Words Modes** — toggle between digit (`0`–`9`) and common-word (`hello`, `you`, `how`, …) models from the controller bar; the live HUD reports the active mode.
-- **Text-to-Speech** — native browser speech synthesis that reads multi-digit results as number words (`100` → "one hundred").
+- **Natural Sentence Construction** — recognized signs are sent to Gemini, which turns the gloss stream into a grammatical sentence of any length. **Natural** keeps it as short as the signs justify; **Expanded** builds a fuller multi-clause message for longer conversations.
+- **Multi-Language Output** — the same call translates the sentence into any of the 19 languages in the picker (Hindi, Bengali, Tamil, Telugu, Marathi, Kannada, Malayalam, Gujarati, Punjabi, Urdu, Spanish, French, German, Portuguese, Arabic, Chinese, Japanese, Russian, English), with the English text kept on screen for reference.
+- **Text-to-Speech** — native browser speech synthesis that picks a voice matching the output language, and reads multi-digit results as number words (`100` → "one hundred").
 - **Word & Sentence Builder** — full UI controls to delete, commit words to a sentence, clear, and record history.
 
 ## Development Setup
@@ -100,6 +109,37 @@ python scripts/collect_sequences.py --mode words --label how --source "http://PH
 
 Inside the collector: press **SPACE** to start, samples are collected continuously, **R** discards the current sample, **Q** quits. Hand landmarks are drawn on the preview.
 
+#### Importing a public dataset instead of recording
+
+`scripts/import_dataset.py` converts a public sign-language dataset into the same `dataset/words/<label>/sequence_NNN.npy` format, so the vocabulary can grow without recording every word by hand.
+
+```bash
+# See which labels the dataset contains
+python scripts/import_dataset.py --mode parquet --input <dataset-root> --list-signs
+
+# Import a curated word list (scripts/wordlist.txt ships with a starting set)
+python scripts/import_dataset.py --mode parquet --input <dataset-root> --words-file scripts/wordlist.txt --max-per-word 400
+
+# Then retrain as usual (PowerShell: $env:MODEL_MODE = "words" on its own line)
+MODEL_MODE=words python ml/preprocess.py
+MODEL_MODE=words python ml/train.py
+```
+
+Unpack an archive produced on Kaggle into `dataset/words/<label>/`, replacing whatever is there — note the archive contains a top-level `words/` folder, so extract to `dataset/`, not `dataset/words/`:
+
+```powershell
+Remove-Item -Recurse -Force dataset\words
+Expand-Archive scripts\words.zip -DestinationPath dataset\
+```
+
+- `--mode parquet` reads MediaPipe landmark tables directly (no video decoding).
+- `--mode video` runs MediaPipe over a directory of clips organised as `<label>/<clip>.mp4`.
+- `--dry-run` reports what would be written without touching the dataset.
+
+**Hand-slot convention.** Slot A holds the hand with the smaller mean x in that frame, slot B the other; a lone hand always takes slot A. This is purely geometric and never consults MediaPipe's left/right labels, which flip depending on whether the source image was mirrored. `import_dataset.py`, `collect_sequences.py`, and `CameraCard.tsx` all apply the identical rule, so recorded data, imported data, and live inference agree by construction.
+
+> Changing this convention invalidated the previously trained word model. Retrain before using **Words** mode.
+
 ### 3. ML Pipeline
 
 ```bash
@@ -126,7 +166,8 @@ uvicorn backend.app.main:app --reload
 
 The API exposes:
 
-- `GET /api/v1/health` — service + model load status.
+- `GET /api/v1/health` — service + model load status, and whether sentence generation is configured.
+- `POST /api/v1/sentence` — body `{ "words": ["hello","how","you"], "language": "hi", "language_name": "Hindi", "style": "natural" }`. See *Sentence construction* below.
 - `POST /api/v1/predict` — body `{ "sequence": [[<127 floats>] x 30], "mode": "numbers" }`.
   - `mode: "numbers"` (default) → digit model (0–9).
   - `mode: "words"` → word-sign model (e.g. `hello`, `you`, `how`); returns `503` until a trained words model is provided (see below).
@@ -134,11 +175,45 @@ The API exposes:
 To train and serve a **words** model (common word signs such as `hello`, `you`, `how`) instead of digits, set `MODEL_MODE=words` before preprocessing and training — the ML scripts then read `dataset/words/` and write the words-specific artifacts automatically:
 
 ```bash
+# macOS / Linux / Git Bash
 MODEL_MODE=words python ml/preprocess.py
 MODEL_MODE=words python ml/train.py
 ```
 
+```powershell
+# Windows PowerShell — `&&` is not a separator in 5.1, and env vars are set
+# with $env:. The variable persists for the session, so set it once.
+$env:MODEL_MODE = "words"
+python ml/preprocess.py
+python ml/train.py
+```
+
 Once trained, the backend serves the words model automatically when the frontend selects **Words** (no extra config needed — `ModelLoaderService` loads `ml/model/sign_speak_words_lstm.h5` + `ml/model/label_encoder_words.pkl` on demand). While untrained, selecting **Words** returns `503`.
+
+### 4b. Sentence Construction and Languages
+
+The **Construct Sentence** button sends the recognized signs to `POST /api/v1/sentence`, which uses the Gemini API to build a grammatical sentence and translate it — replacing what used to be a fixed table of hardcoded phrases, so sentence length is no longer capped by which phrasings were written down.
+
+Set a key in the backend environment (project root `.env` or the host's config):
+
+```bash
+GEMINI_API_KEY=...
+# optional — Gemini model IDs change fairly often
+SENTENCE_MODEL=gemini-2.5-flash
+```
+
+Then install the dependency and restart the API:
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+Behaviour without a key: `/api/v1/sentence` returns `503`, and the frontend silently falls back to the local rule table in `frontend/src/lib/grammar.ts` (English only). The app keeps working; sentences are just shorter and untranslated.
+
+Two controls sit in the Sentence Constructor header:
+
+- **Natural / Expanded** — Natural matches the signed words; Expanded joins them into a fuller two-to-three sentence message for longer conversations.
+- **Language picker** — the language the sentence is generated *and spoken* in. When it is not English, the English text is shown underneath for reference. Repeated gloss sequences are served from a server-side cache, so re-constructing the same phrase is instant.
 
 ### 5. Frontend UI
 
@@ -156,12 +231,13 @@ Open `http://localhost:3000`. Enable the camera, choose **Numbers** or **Words**
 2. Open the frontend, click **Enable Camera**.
 3. Select **Numbers** (digits) or **Words** (word signs like `hello`, `you`).
 4. Click **Start Translation**, perform a gesture and hold until the status bar confirms it was registered.
-5. Use the sentence builder to commit words, then **Speak Out Loud** or **Archive** the result.
+5. Commit words in the sentence builder, pick an output language, then **Construct Sentence** to turn the signs into a natural sentence.
+6. **Speak Out Loud** reads it in the selected language, or **Archive** stores it in the history panel.
 
 ## Testing
 
 ```bash
 venv\Scripts\activate
 pip install pytest httpx
-pytest tests/test_api.py -v
+pytest tests/ -v
 ```

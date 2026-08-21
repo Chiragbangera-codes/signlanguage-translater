@@ -23,9 +23,12 @@ logging.basicConfig(
 logger = logging.getLogger("backend_api")
 
 from .api.v1.predict import router as predict_router
+from .api.v1.sentence import router as sentence_router
 from .services.model_loader import ModelLoaderService
+from .services.sentence_service import SentenceService
 
 model_loader = ModelLoaderService()
+sentence_service = SentenceService()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,6 +40,14 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to load ML model checkpoints: {e}")
         # Server can start even if model loading fails,
         # but prediction requests will return 503 Service Unavailable.
+
+    if sentence_service.credentials_configured():
+        logger.info("Sentence generation enabled (Gemini API key found).")
+    else:
+        logger.warning(
+            "Sentence generation disabled: no Gemini API key found. "
+            "Set GEMINI_API_KEY to enable natural sentences and translation."
+        )
     yield
     logger.info("Shutting down SignSpeak AI FastAPI Server...")
 
@@ -72,6 +83,7 @@ app.add_middleware(
 
 # Wire up routers
 app.include_router(predict_router, prefix="/api/v1", tags=["Prediction"])
+app.include_router(sentence_router, prefix="/api/v1", tags=["Sentence"])
 
 @app.get("/api/v1/health", summary="Health Check Status")
 async def health_check():
@@ -84,6 +96,7 @@ async def health_check():
         "status": "ok",
         "version": "1.0.0",
         "model_loaded": model_loaded,
+        "sentence_generation": sentence_service.credentials_configured(),
         "tensorflow": tf_version_major
     }
 

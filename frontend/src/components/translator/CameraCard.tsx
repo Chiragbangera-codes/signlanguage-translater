@@ -2,8 +2,21 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { VideoOff, WifiOff } from "lucide-react";
 import { useTranslatorStore } from "../../store/useTranslatorStore";
+import { isLocalModelAvailable, loadLocalModel, predictLocally, getLocalModelError } from "../../lib/localModel";
 
 const SEQUENCE_LENGTH = 30;
+
+// Keep in step with the @mediapipe/hands entry in package.json.
+const MEDIAPIPE_HANDS_VERSION = "0.4.1675469240";
+
+// A faulted WASM heap never recovers, so retrying forever just floods the
+// console. Stop the loop and report instead.
+const MAX_CONSECUTIVE_FRAME_ERRORS = 10;
+
+// In-browser inference costs a few milliseconds, so it can run near frame
+// rate. The remote path still needs throttling — each call ships ~80KB.
+const LOCAL_MIN_INTERVAL_MS = 60;
+const REMOTE_MIN_INTERVAL_MS = 200;
 
 // Draw hand joints & connection lines in canvas context (declared outside to remain pure)
 const drawHandSkeleton = (ctx: CanvasRenderingContext2D, landmarks: any[]) => {
@@ -60,6 +73,7 @@ export const CameraCard: React.FC = () => {
     setStatusBarMessage,
     setCameraFps,
     setApiHealthy,
+    setInferenceSource,
     activeMode
   } = useTranslatorStore();
 
@@ -69,9 +83,15 @@ export const CameraCard: React.FC = () => {
   const handsRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const cameraStarting = useRef<boolean>(false);
   
   // Pipeline Performance and Stabilization Refs
   const lastPredictionTime = useRef<number>(0);
+  const inferenceInFlight = useRef<boolean>(false);
+  const useLocalModel = useRef<boolean>(false);
+  // The API can be unreachable on every single frame; log the reason once
+  // rather than filling the console with identical stack traces.
+  const apiErrorLogged = useRef<boolean>(false);
   const predictionBuffer = useRef<string[]>([]);
   const landmarkSequence = useRef<number[][]>([]);
   
@@ -84,6 +104,12 @@ export const CameraCard: React.FC = () => {
   // FPS Counter tracking refs
   const fpsLastTime = useRef<number>(0);
   const fpsFrames = useRef<number>(0);
+  const frameErrors = useRef<number>(0);
+  // MediaPipe keeps a single WASM heap per instance, and a second send() while
+  // one is still running corrupts it — the crash reads as "memory access out
+  // of bounds" on every subsequent frame. React StrictMode double-invokes the
+  // activation effect, so two loops really can exist; this makes that harmless.
+  const sendInFlight = useRef<boolean>(false);
 
   const [cameraError, setCameraError] = useState<string | null>(null);
 
@@ -98,8 +124,15 @@ export const CameraCard: React.FC = () => {
     processVideoFrameRef.current = async () => {
       if (!streamRef.current || !videoRef.current || !handsRef.current) return;
 
-      if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+      // A zero-sized frame also faults the WASM decoder.
+      const ready =
+        videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA &&
+        videoRef.current.videoWidth > 0 &&
+        videoRef.current.videoHeight > 0;
+
+      if (ready && !sendInFlight.current) {
         try {
+          sendInFlight.current = true;
           await handsRef.current.send({ image: videoRef.current });
           
           // Track frame rendering cycles for FPS calculation
@@ -111,13 +144,34 @@ export const CameraCard: React.FC = () => {
             fpsFrames.current = 0;
             fpsLastTime.current = now;
           }
+          frameErrors.current = 0;
         } catch (err) {
-          console.error("Frame processing exception:", err);
+          frameErrors.current += 1;
+
+          if (frameErrors.current === 1) {
+            console.error("Frame processing exception:", err);
+          }
+
+          if (frameErrors.current >= MAX_CONSECUTIVE_FRAME_ERRORS) {
+            console.error(
+              `MediaPipe failed on ${frameErrors.current} consecutive frames; stopping the capture loop.`
+            );
+            setStatusBarMessage(
+              "Hand tracking crashed and cannot recover. Reload the page; if it persists, " +
+              "the MediaPipe WASM build may not match the installed package version."
+            );
+            setCameraFps(0);
+            animationFrameRef.current = null;
+            sendInFlight.current = false;
+            return;
+          }
+        } finally {
+          sendInFlight.current = false;
         }
       }
       animationFrameRef.current = requestAnimationFrame(processVideoFrameRef.current);
     };
-  }, [setCameraFps]);
+  }, [setCameraFps, setStatusBarMessage]);
 
   // Stabilization: Buffer, Majority Vote, Hold Trigger (700ms), and Cooldown Lock (500ms)
   const runStabilizationPipeline = useCallback((letter: string, confidence: number) => {
@@ -160,6 +214,18 @@ export const CameraCard: React.FC = () => {
         if (holdDuration >= 700) {
           // Check cooldown lock (500ms) to prevent stuttering
           const cooldownElapsed = now - lastAppendTime.current;
+
+          // Require a release between identical signs. Without this, holding
+          // one gesture re-commits it every cooldown tick — "thank_you"
+          // thirty times over. Lowering the hand (or signing something else)
+          // clears the guard, so deliberate repeats still work.
+          if (majorityLetter === lastAppendedLetter.current) {
+            setStatusBarMessage(
+              `Holding "${majorityLetter}" — lower your hand to sign it again.`
+            );
+            return;
+          }
+
            if (cooldownElapsed >= 500) {
             lastAppendTime.current = now;
             lastAppendedLetter.current = majorityLetter;
@@ -195,51 +261,48 @@ export const CameraCard: React.FC = () => {
   // Maps one MediaPipe result to a 127-value frame, then sends a 30-frame sequence.
   const executeInference = useCallback(async (results: any) => {
     const landmarksList = results.multiHandLandmarks || [];
-    const handednessList = results.multiHandedness || [];
 
-    // Initialize padded landmarks (-1.0)
-    let leftHandCoords = Array(63).fill(-1.0);
-    let rightHandCoords = Array(63).fill(-1.0);
+    // Hand-slot convention: slot A is the hand with the smaller mean x, slot B
+    // is the other; a lone hand always takes slot A. Purely geometric — it
+    // never reads MediaPipe's handedness labels, which flip depending on
+    // whether the source image was mirrored. scripts/import_dataset.py and
+    // scripts/collect_sequences.py apply the identical rule, so training data
+    // and live inference agree by construction.
+    let slotA = Array(63).fill(-1.0);
+    let slotB = Array(63).fill(-1.0);
 
     const numHands = landmarksList.length;
     const usesTwoHands = numHands >= 2 ? 1.0 : 0.0;
 
-    if (numHands === 1) {
-      // Single hand detected: always route the active hand coordinates to the leftHandCoords slot
-      // to match the training dataset structure (active hand in left_hand, right_hand padded with -1.0)
-      const landmarks = landmarksList[0];
-      const flatCoords: number[] = [];
+    const flatten = (landmarks: any[]): number[] => {
+      const coords: number[] = [];
       for (const lm of landmarks) {
-        flatCoords.push(lm.x, lm.y, lm.z);
+        coords.push(lm.x, lm.y, lm.z);
       }
-      leftHandCoords = flatCoords;
+      return coords;
+    };
+
+    const meanX = (coords: number[]): number => {
+      let sum = 0;
+      let count = 0;
+      for (let i = 0; i < coords.length; i += 3) {
+        sum += coords[i];
+        count++;
+      }
+      return count > 0 ? sum / count : 0;
+    };
+
+    if (numHands === 1) {
+      slotA = flatten(landmarksList[0]);
     } else if (numHands >= 2) {
-      // Two hands detected: swap the labels because MediaPipe handedness is reversed (input image to MediaPipe is not mirrored)
-      for (let i = 0; i < numHands; i++) {
-        const landmarks = landmarksList[i];
-        const handedness = handednessList[i];
-
-        const flatCoords: number[] = [];
-        for (const lm of landmarks) {
-          flatCoords.push(lm.x, lm.y, lm.z);
-        }
-
-        const label: string =
-          handedness?.classification?.[0]?.label ?? handedness?.label ?? "";
-
-
-
-        if (label === "Right") {
-          // MediaPipe "Right" hand (non-mirrored) is physically Left hand -> route to leftHandCoords
-          leftHandCoords = flatCoords;
-        } else if (label === "Left") {
-          // MediaPipe "Left" hand (non-mirrored) is physically Right hand -> route to rightHandCoords
-          rightHandCoords = flatCoords;
-        }
-      }
+      const ordered = [flatten(landmarksList[0]), flatten(landmarksList[1])].sort(
+        (a, b) => meanX(a) - meanX(b)
+      );
+      slotA = ordered[0];
+      slotB = ordered[1];
     }
 
-    const frame = [usesTwoHands, ...leftHandCoords, ...rightHandCoords];
+    const frame = [usesTwoHands, ...slotA, ...slotB];
     landmarkSequence.current.push(frame);
     if (landmarkSequence.current.length > SEQUENCE_LENGTH) {
       landmarkSequence.current.shift();
@@ -250,12 +313,37 @@ export const CameraCard: React.FC = () => {
       return;
     }
 
-    // A sequence is captured at camera frame rate; limit only the API requests.
+    // Guard against overlapping inference. The old code set the throttle
+    // timestamp *before* awaiting, so on a slow backend requests piled up and
+    // responses arrived out of order — the HUD lagged behind the hand by
+    // however far behind the queue was.
+    if (inferenceInFlight.current) return;
+
     const now = Date.now();
-    if (now - lastPredictionTime.current < 200) return;
+    const minInterval = useLocalModel.current ? LOCAL_MIN_INTERVAL_MS : REMOTE_MIN_INTERVAL_MS;
+    if (now - lastPredictionTime.current < minInterval) return;
+
+    inferenceInFlight.current = true;
     lastPredictionTime.current = now;
 
+    // Snapshot the buffer: it keeps mutating at camera frame rate while we await.
+    const sequence = landmarkSequence.current.map((frame) => frame.slice());
+
     try {
+      if (useLocalModel.current) {
+        const result = await predictLocally(sequence, activeMode);
+        setApiHealthy(true);
+        setInferenceSource("local");
+        setPrediction(
+          result.prediction,
+          result.confidence,
+          result.topPredictions,
+          result.processingTimeMs
+        );
+        runStabilizationPipeline(result.prediction, result.confidence);
+        return;
+      }
+
       const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
       const response = await fetch(`${apiBase}/predict`, {
         method: "POST",
@@ -263,7 +351,7 @@ export const CameraCard: React.FC = () => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          sequence: landmarkSequence.current,
+          sequence,
           mode: activeMode
         })
       });
@@ -277,7 +365,9 @@ export const CameraCard: React.FC = () => {
 
       const data = await response.json();
       setApiHealthy(true);
-      
+      setInferenceSource("api");
+      apiErrorLogged.current = false;
+
       // Update store state with prediction
       setPrediction(
         data.prediction, 
@@ -290,12 +380,28 @@ export const CameraCard: React.FC = () => {
       runStabilizationPipeline(data.prediction, data.confidence);
 
     } catch (err) {
-      console.error("FastAPI backend connection error:", err);
-      setStatusBarMessage("Backend unavailable. Verify FastAPI is running on port 8000.");
+      if (useLocalModel.current) {
+        // Local inference broke mid-session: fall back rather than freezing.
+        console.error("Local inference error, falling back to API:", err);
+        useLocalModel.current = false;
+        setStatusBarMessage("Local model failed — falling back to the prediction API.");
+        return;
+      }
+      if (!apiErrorLogged.current) {
+        apiErrorLogged.current = true;
+        console.error("FastAPI backend connection error:", err);
+      }
+      setStatusBarMessage(
+        `No on-device model for "${activeMode}" and the prediction API is unreachable. ` +
+        `Switch to Words mode, or start the backend on port 8000.`
+      );
       setPrediction(null, 0, [], 0);
       setApiHealthy(false);
+      setInferenceSource(null);
+    } finally {
+      inferenceInFlight.current = false;
     }
-  }, [setPrediction, setStatusBarMessage, setApiHealthy, runStabilizationPipeline, activeMode]);
+  }, [setPrediction, setStatusBarMessage, setApiHealthy, setInferenceSource, runStabilizationPipeline, activeMode]);
 
   // MediaPipe Results Processing
   const onHandResults = useCallback(async (results: any) => {
@@ -342,9 +448,11 @@ export const CameraCard: React.FC = () => {
       if (landmarksList.length === 0) {
         setPrediction(null, 0, [], 0);
         setStatusBarMessage("No hands in frame. Position your hands to translate.");
-        // Clear majority state
+        // Clear majority state. Dropping the hand is also what releases the
+        // repeat guard, so the same sign can be committed again afterwards.
         currentMajorityLetter.current = null;
         majorityLetterStartTime.current = 0;
+        lastAppendedLetter.current = null;
         landmarkSequence.current = [];
         return;
       }
@@ -358,6 +466,46 @@ export const CameraCard: React.FC = () => {
     onHandResultsRef.current = onHandResults;
   }, [onHandResults]);
 
+  // Pick the inference path for the active mode. Preferring the local model
+  // removes the network round-trip that dominated prediction latency; the API
+  // remains the fallback when no exported model is published for this mode.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      useLocalModel.current = false;
+      apiErrorLogged.current = false;
+
+      if (!(await isLocalModelAvailable(activeMode))) {
+        if (!cancelled) {
+          setStatusBarMessage(
+            `No on-device model for ${activeMode} — using the prediction API. ` +
+            `Run scripts/export_tfjs.py to enable local inference.`
+          );
+        }
+        return;
+      }
+
+      try {
+        setStatusBarMessage("Loading on-device model...");
+        await loadLocalModel(activeMode);
+        if (cancelled) return;
+        useLocalModel.current = true;
+        setStatusBarMessage("On-device model ready — predictions run locally.");
+      } catch {
+        if (cancelled) return;
+        useLocalModel.current = false;
+        setStatusBarMessage(
+          `On-device model failed to load (${getLocalModelError() ?? "unknown error"}). Using the API.`
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMode, setStatusBarMessage]);
+
   const stopCameraAndLoop = useCallback(() => {
     // 1. Stop animation loop
     if (animationFrameRef.current) {
@@ -370,6 +518,9 @@ export const CameraCard: React.FC = () => {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
+    cameraStarting.current = false;
+    sendInFlight.current = false;
+    frameErrors.current = 0;
     
     if (videoRef.current) {
       videoRef.current.srcObject = null;
@@ -392,6 +543,12 @@ export const CameraCard: React.FC = () => {
   }, [setPrediction, setCameraFps]);
 
   const startCamera = useCallback(async () => {
+    // StrictMode runs the activation effect twice; without this the second
+    // call opens a second MediaStream, leaks the first, and can fire
+    // onloadedmetadata twice.
+    if (streamRef.current || cameraStarting.current) return;
+
+    cameraStarting.current = true;
     setCameraError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -412,13 +569,21 @@ export const CameraCard: React.FC = () => {
             // Reset FPS counters
             fpsLastTime.current = performance.now();
             fpsFrames.current = 0;
-            // Start the frame processor loop
+            frameErrors.current = 0;
+
+            // onloadedmetadata can fire more than once (and StrictMode starts
+            // the camera twice), so retire any existing loop before scheduling.
+            if (animationFrameRef.current !== null) {
+              cancelAnimationFrame(animationFrameRef.current);
+            }
             animationFrameRef.current = requestAnimationFrame(processVideoFrameRef.current);
           }
         };
       }
       setStatusBarMessage("Webcam connected. Feed active.");
+      cameraStarting.current = false;
     } catch (err: any) {
+      cameraStarting.current = false;
       console.error("[CameraCard] Webcam access denied or unavailable:", err);
       setWebcamActive(false);
       setCameraError("Permission Denied");
@@ -450,11 +615,18 @@ export const CameraCard: React.FC = () => {
         }
 
         const hands = new HandsConstructor({
-          locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+          // Pinned to the version in package.json so the WASM binary can never
+          // drift from the JS wrapper loaded out of node_modules.
+          locateFile: (file: string) =>
+            `https://cdn.jsdelivr.net/npm/@mediapipe/hands@${MEDIAPIPE_HANDS_VERSION}/${file}`
         });
 
         hands.setOptions({
-          maxNumHands: 2,
+          // One hand, matching the training data: the PopSign vocabulary is
+          // ~99.7% single-hand, so a second detected hand would fill slot B and
+          // flip uses_two_hands to 1.0 — an input the model has never seen.
+          // Tracking one hand is also cheaper per frame.
+          maxNumHands: 1,
           modelComplexity: 1,
           minDetectionConfidence: 0.6,
           minTrackingConfidence: 0.6
@@ -476,6 +648,16 @@ export const CameraCard: React.FC = () => {
     return () => {
       active = false;
       stopCameraAndLoop();
+
+      // Release the WASM instance. Without this, StrictMode's double-mount
+      // leaves an orphaned MediaPipe heap alive for the life of the page.
+      const instance = handsRef.current;
+      handsRef.current = null;
+      if (instance?.close) {
+        Promise.resolve(instance.close()).catch(() => {
+          /* already torn down */
+        });
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on mount only — stopCameraAndLoop called via cleanup

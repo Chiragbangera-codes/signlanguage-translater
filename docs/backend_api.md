@@ -13,12 +13,15 @@ backend/
   ├── app/
   │     ├── api/
   │     │     └── v1/
-  │     │           └── predict.py   <-- POST /predict router
+  │     │           ├── predict.py     <-- POST /predict router
+  │     │           └── sentence.py    <-- POST /sentence router
   │     ├── core/                  <-- Configurations and security
   │     ├── schemas/
-  │     │     └── predict.py       <-- Pydantic schemas (Request / Response)
+  │     │     ├── predict.py       <-- Pydantic schemas (Request / Response)
+  │     │     └── sentence.py      <-- Sentence request / response schemas
   │     ├── services/
-  │     │     └── model_loader.py  <-- Thread-safe Singleton model loader
+  │     │     ├── model_loader.py  <-- Thread-safe Singleton model loader
+  │     │     └── sentence_service.py <-- Gemini-backed sentence construction
   │     └── main.py                <-- FastAPI app setup and Lifespan manager
   ├── requirements.txt
   └── .env
@@ -28,6 +31,7 @@ backend/
 *   **Lifespan manager**: On startup, loads and initializes the TensorFlow model and Label Encoder. On shutdown, releases resources.
 *   **ModelLoaderService**: Singleton service designed with a thread lock to ensure thread safety when executing `model.predict()` concurrently across incoming async FastAPI requests.
 *   **API v1 predict router**: Validates the payload using Pydantic, normalizes landmarks utilizing the exact sample-wise preprocessing functions from the training suite, merges coordinates, and calls the loader.
+*   **SentenceService**: Thread-safe singleton wrapping the Gemini client. Converts recognized sign glosses into a grammatical sentence and translates it in the same call, with an in-memory LRU cache (256 entries) so a repeated gloss sequence costs nothing. Disabled — and reported as such — when no API key is configured.
 
 ---
 
@@ -54,9 +58,11 @@ backend/
       "status": "ok",
       "version": "1.0.0",
       "model_loaded": true,
+      "sentence_generation": true,
       "tensorflow": "2.x"
     }
     ```
+    `sentence_generation` is `false` when no Gemini API key is configured; `POST /api/v1/sentence` returns `503` in that state and the frontend falls back to its local grammar rules.
 
 
 ### 2.3 Translate Gesture
@@ -101,6 +107,40 @@ backend/
     }
     ```
 
+### 2.4 Construct Sentence
+`POST /api/v1/sentence`
+*   **Description**: Turns an ordered list of recognized sign glosses into a natural sentence, and translates it into the requested language. Handles arbitrary gloss length — there is no fixed pattern table.
+*   **Request Body**:
+    ```json
+    {
+      "words": ["hello", "how", "you"],
+      "language": "hi",
+      "language_name": "Hindi",
+      "style": "natural",
+      "mode": "words"
+    }
+    ```
+    | Field | Required | Description |
+    | --- | :---: | --- |
+    | `words` | yes | 1–64 glosses, oldest first. |
+    | `language` | no | Code echoed back to the client, default `"en"`. |
+    | `language_name` | no | Language name the model reads (e.g. `"Hindi"`), default English. |
+    | `style` | no | `"natural"` (match the glosses) or `"expanded"` (fuller multi-sentence message). |
+    | `mode` | no | `"words"` or `"numbers"` — tells the model whether glosses are digits. |
+*   **Response (200 OK)**:
+    ```json
+    {
+      "sentence": "आप कैसे हैं?",
+      "english": "How are you?",
+      "language": "hi",
+      "language_name": "Hindi",
+      "source": "llm",
+      "processing_time_ms": 842.31
+    }
+    ```
+    `source` is `"llm"` for a freshly generated sentence and `"cache"` for a repeated gloss sequence.
+*   **Configuration**: set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) in the backend environment. `SENTENCE_MODEL` overrides the model (default `gemini-2.5-flash`).
+
 ---
 
 ## 3. Error and Status Codes
@@ -113,4 +153,6 @@ The API implements structured JSON error responses with standard HTTP status cod
 | **400 Bad Request** | Request parsing error | Body contains malformed JSON or validation fails (e.g. sequence is not 30 frames, or frame features are not 127). |
 | **422 Unprocessable** | Validation error | Valid input schema but no hand was detected in any of the 30 frames. |
 | **503 Service Unavailable**| Model checkpoints not loaded | The TensorFlow model file is missing or failed to initialize on startup. |
+| **503 Service Unavailable**| Sentence generation unavailable | `/sentence` was called with no Gemini API key configured, or the model returned nothing usable. The frontend falls back to local grammar rules. |
+| **502 Bad Gateway** | Upstream sentence failure | The call to Gemini failed (network, rate limit, or API error). |
 | **500 Server Error** | Internal pipeline failure | Inference calculations failed due to runtime exceptions. |

@@ -3,6 +3,8 @@ import { History, Play, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslatorStore } from "../../store/useTranslatorStore";
 import { speakSentence } from "../../lib/speech";
+import { getLanguage } from "../../lib/languages";
+import type { HistoryEntry } from "../../store/useTranslatorStore";
 
 export const HistoryPanel: React.FC = () => {
   const { 
@@ -13,10 +15,11 @@ export const HistoryPanel: React.FC = () => {
     selectedVoiceName
   } = useTranslatorStore();
 
-  const handleSpeakHistoryItem = (itemText: string) => {
+  const handleSpeakHistoryItem = (entry: HistoryEntry) => {
     if ("speechSynthesis" in window) {
-      speakSentence(itemText, selectedVoiceName, speechRate);
-      setStatusBarMessage(`Replaying archived speech: "${itemText}"`);
+      const { bcp47 } = getLanguage(entry.language);
+      speakSentence(entry.text, selectedVoiceName, speechRate, bcp47);
+      setStatusBarMessage(`Replaying archived speech: "${entry.text}"`);
     }
   };
 
@@ -45,7 +48,7 @@ export const HistoryPanel: React.FC = () => {
       <div className="flex-1 overflow-y-auto max-h-[320px] flex flex-col gap-2.5 pr-1">
         <AnimatePresence initial={false}>
           {history.length > 0 ? (
-            history.map((sentence, idx) => (
+            history.map((entry, idx) => (
               <motion.div
                 key={idx}
                 initial={{ opacity: 0, x: -10 }}
@@ -54,12 +57,15 @@ export const HistoryPanel: React.FC = () => {
                 transition={{ duration: 0.2 }}
                 className="p-3.5 rounded-xl border border-zinc-900 bg-zinc-900/20 hover:border-zinc-800/80 flex items-center justify-between gap-3 group transition-all"
               >
-                <span className="text-xs.5 font-bold font-mono text-zinc-300 leading-normal truncate flex-1 select-text">
-                  {sentence}
+                <span
+                  lang={getLanguage(entry.language).bcp47}
+                  className="text-xs.5 font-bold font-mono text-zinc-300 leading-normal truncate flex-1 select-text"
+                >
+                  {entry.text}
                 </span>
                 
                 <button
-                  onClick={() => handleSpeakHistoryItem(sentence)}
+                  onClick={() => handleSpeakHistoryItem(entry)}
                   className="w-7 h-7 rounded-lg border border-zinc-800 bg-zinc-950 flex items-center justify-center text-zinc-500 hover:text-emerald-400 hover:bg-emerald-950/20 transition-all opacity-100 md:opacity-40 group-hover:opacity-100 cursor-pointer shadow-md shrink-0"
                   title="Replay Audio"
                 >

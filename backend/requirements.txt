@@ -8,3 +8,7 @@ scikit-learn==1.7.2
 pydantic==2.13.4
 python-dotenv==1.2.2
 h5py==3.16.0
+# Sentence generation + translation. Pin this from `pip freeze` after the first
+# install; needs a version supporting response_schema (the unified google-genai
+# SDK, not the older google-generativeai package).
+google-genai
