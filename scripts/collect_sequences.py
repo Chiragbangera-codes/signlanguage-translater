@@ -102,7 +102,9 @@ def collect(label: str, samples: int, dataset_dir: Path, camera_index: int, sour
 
     hands = mp.solutions.hands.Hands(
         static_image_mode=False,
-        max_num_hands=2,
+        # One hand, matching CameraCard.tsx. Recording with two hands
+        # visible would fill slot B, which live inference never does.
+        max_num_hands=1,
         model_complexity=1,
         min_detection_confidence=0.6,
         min_tracking_confidence=0.6,

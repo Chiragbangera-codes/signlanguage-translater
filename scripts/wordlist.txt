@@ -1,100 +1,102 @@
-# Curated vocabulary for SignSpeak.
+# Vocabulary for the words model — 50 signs, all confirmed present in the
+# Google/PopSign ASL landmark set.
 #
-# Chosen to COMPOSE — these words combine into many sentences rather than
-# covering many topics shallowly, which is what the sentence constructor needs
-# to produce long output. Keep the list short: fewer classes means higher
-# accuracy and a more reliable demo.
+#   python import_dataset.py --mode parquet --input /kaggle/input/asl-signs \
+#       --words-file wordlist.txt --max-per-word 400 --clear
 #
-# Import with:
-#   python scripts/import_dataset.py --mode parquet --input <dataset> \
-#       --words-file scripts/wordlist.txt --clear
+# Selection notes
+# ---------------
+# The 33 below the first heading are the current shipping vocabulary. The 17
+# additions were chosen for three things: they compose into sentences, they
+# cover gaps in the existing set (no people, no verbs of perception, only two
+# emotions), and their handshapes and motions differ from each other.
 #
-# Run --list-signs against your dataset first; anything not present is skipped
-# with a warning, so it is safe to leave optimistic entries here.
+# That last point matters more than it looks. preprocess.py moves each hand's
+# wrist to the origin and scales by hand size, which deliberately removes
+# camera position — but it also removes WHERE the hand sits relative to the
+# body. Two signs with the same handshape at different body locations are
+# therefore near-identical to this model. `mom` (thumb at chin) and `dad`
+# (thumb at forehead) are exactly that pair; both are included because they are
+# high-value words, but check the confusion matrix after training and drop one
+# if they trade. The same caution applies to any future grandma/grandpa pair.
 
-# --- people -----------------------------------------------------------
-i
-you
-we
-they
-man
-woman
-mother
-father
-friend
-teacher
-doctor
-
-# --- verbs ------------------------------------------------------------
-want
-need
-have
-go
-come
-help
-give
-eat
-drink
-sleep
-work
-study
-play
-stop
-finish
-understand
-know
-like
-love
-feel
-
-# --- things -----------------------------------------------------------
-water
-food
-milk
-home
-school
-hospital
-book
-phone
-money
-time
-name
-
-# --- questions --------------------------------------------------------
-who
-what
-where
-when
-why
-how
-
-# --- descriptions -----------------------------------------------------
-good
+# ---------------------------------------------------------------
+# Existing vocabulary (33)
+# ---------------------------------------------------------------
 bad
+book
+bye
+drink
+finish
+food
+give
+go
 happy
+have
+hello
+home
+hot
+hungry
+like
+man
+milk
+no
+now
+please
 sad
 sick
-hungry
-thirsty
-tired
-hot
-cold
-big
-small
-
-# --- social -----------------------------------------------------------
-hello
-bye
-please
+sleep
 thankyou
-sorry
-yes
-no
-more
-again
-
-# --- time -------------------------------------------------------------
-now
-today
+thirsty
+time
 tomorrow
+water
+where
+who
+why
+yes
 yesterday
+
+# ---------------------------------------------------------------
+# Added — people. The set had only `man`, so sentences could not say who.
+# ---------------------------------------------------------------
+mom
+dad
+brother
+girl
+boy
+
+# ---------------------------------------------------------------
+# Added — animals. Distinct handshapes, and concrete nouns make the
+# generated sentences noticeably more natural.
+# ---------------------------------------------------------------
+dog
+cat
+
+# ---------------------------------------------------------------
+# Added — verbs. The set had `go`, `give`, `have`, `drink`, `sleep` and
+# `finish`; these add perception and manipulation.
+# ---------------------------------------------------------------
+see
+look
+wait
+open
+make
+
+# ---------------------------------------------------------------
+# Added — emotion. Complements happy / sad / bad.
+# ---------------------------------------------------------------
+mad
+cry
+
+# ---------------------------------------------------------------
+# Added — time of day. Complements now / tomorrow / yesterday.
+# ---------------------------------------------------------------
+morning
+night
+
+# ---------------------------------------------------------------
+# Added — pointing. Indexing is central to sign language grammar and
+# gives the sentence builder something to attach references to.
+# ---------------------------------------------------------------
+that

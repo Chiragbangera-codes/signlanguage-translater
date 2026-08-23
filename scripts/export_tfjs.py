@@ -99,8 +99,8 @@ def main() -> int:
         print(f"Wrote {out_dir / 'labels.json'} - {len(labels)} classes")
         print(f"  {', '.join(labels)}")
         print("")
-        print("Now convert the model on Linux (see the module docstring) and drop")
-        print(f"model.json plus the .bin shards next to it in {out_dir}")
+        print("Now export the weights alongside it:")
+        print(f"    python scripts/keras_to_tfjs.py --mode {args.mode}")
         return 0
 
     if out_dir.exists():

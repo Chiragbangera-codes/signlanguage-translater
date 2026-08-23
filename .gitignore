@@ -64,3 +64,11 @@ CLAUDE.md
 AGENTS.md
 **/CLAUDE.md
 **/AGENTS.md
+
+# Preprocessed training splits — regenerate with `python ml/preprocess.py`.
+# These grow past GitHub's 100 MB hard limit as the vocabulary scales.
+dataset/preprocessed_data*.npz
+
+# Imported classes held back from training — re-import with
+# scripts/import_dataset.py rather than versioning unused data.
+dataset/words_unused/
