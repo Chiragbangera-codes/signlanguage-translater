@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "sync:mediapipe": "node ../scripts/sync-mediapipe.mjs"
   },
   "dependencies": {
     "@mediapipe/hands": "^0.4.1675469240",

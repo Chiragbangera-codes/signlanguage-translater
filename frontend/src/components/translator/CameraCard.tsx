@@ -6,8 +6,9 @@ import { isLocalModelAvailable, loadLocalModel, predictLocally, getLocalModelErr
 
 const SEQUENCE_LENGTH = 30;
 
-// Keep in step with the @mediapipe/hands entry in package.json.
-const MEDIAPIPE_HANDS_VERSION = "0.4.1675469240";
+// The assets in /public/mediapipe are copied from this version of the package;
+// `npm run sync:mediapipe` re-copies them after a dependency bump.
+export const MEDIAPIPE_HANDS_VERSION = "0.4.1675469240";
 
 // A faulted WASM heap never recovers, so retrying forever just floods the
 // console. Stop the loop and report instead.
@@ -615,10 +616,13 @@ export const CameraCard: React.FC = () => {
         }
 
         const hands = new HandsConstructor({
-          // Pinned to the version in package.json so the WASM binary can never
-          // drift from the JS wrapper loaded out of node_modules.
-          locateFile: (file: string) =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/hands@${MEDIAPIPE_HANDS_VERSION}/${file}`
+          // Served from our own /public, not a CDN. Ad blockers and network
+          // filters routinely block cdn.jsdelivr.net, and MediaPipe surfaces
+          // that as "Failed to fetch" on every frame with no way to recover.
+          // Same-origin assets also keep the app working offline and remove a
+          // third-party dependency from the demo path.
+          // Refresh them with: npm run sync:mediapipe
+          locateFile: (file: string) => `/mediapipe/${file}`
         });
 
         hands.setOptions({
