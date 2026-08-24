@@ -24,7 +24,7 @@ logger = logging.getLogger("backend_api")
 
 # Gemini model IDs move fairly often; override with SENTENCE_MODEL rather than
 # editing this file.
-DEFAULT_MODEL = os.getenv("SENTENCE_MODEL", "gemini-2.5-flash")
+DEFAULT_MODEL = os.getenv("SENTENCE_MODEL", "gemini-3.6-flash")
 DEFAULT_LANGUAGE_NAME = "English"
 CACHE_SIZE = 256
 
