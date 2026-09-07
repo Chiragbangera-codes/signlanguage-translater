@@ -43,7 +43,12 @@ DEFAULT_DATASET_PATH = os.path.join(
     "preprocessed_data_words.npz" if _IS_WORDS else "preprocessed_data.npz",
 )
 
-ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
+# Words runs write into artifacts/words/ so they cannot clobber the digit
+# curves — the previous fixed path meant every words run overwrote the
+# numbers artifacts and left artifacts/words/ permanently stale.
+_ARTIFACTS_ROOT = os.path.join(os.path.dirname(__file__), "artifacts")
+ARTIFACTS_DIR = os.path.join(_ARTIFACTS_ROOT, "words") if _IS_WORDS else _ARTIFACTS_ROOT
+_CURVE_SUFFIX = "_words" if _IS_WORDS else ""
 
 def load_preprocessed_data(path=DEFAULT_DATASET_PATH):
     """Loads the train, validation, and test datasets from npz file."""
@@ -177,7 +182,7 @@ def plot_curves(history: dict):
     plt.ylabel('Accuracy', fontsize=12)
     plt.legend(loc='lower right', frameon=True)
     plt.tight_layout()
-    acc_curve_path = os.path.join(ARTIFACTS_DIR, "accuracy_curve.png")
+    acc_curve_path = os.path.join(ARTIFACTS_DIR, f"accuracy_curve{_CURVE_SUFFIX}.png")
     plt.savefig(acc_curve_path, dpi=150)
     plt.close()
     print(f"Saved accuracy curve to: {acc_curve_path}")
@@ -191,7 +196,7 @@ def plot_curves(history: dict):
     plt.ylabel('Loss', fontsize=12)
     plt.legend(loc='upper right', frameon=True)
     plt.tight_layout()
-    loss_curve_path = os.path.join(ARTIFACTS_DIR, "loss_curve.png")
+    loss_curve_path = os.path.join(ARTIFACTS_DIR, f"loss_curve{_CURVE_SUFFIX}.png")
     plt.savefig(loss_curve_path, dpi=150)
     plt.close()
     print(f"Saved loss curve to: {loss_curve_path}")
