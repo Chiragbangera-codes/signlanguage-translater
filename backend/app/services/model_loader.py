@@ -36,11 +36,11 @@ NUMBERS_LABEL_ENCODER_PATH = os.getenv(
 
 WORDS_MODEL_PATH = os.getenv(
     "WORDS_MODEL_SAVE_PATH",
-    str(DEFAULT_MODEL_DIR / "sign_speak_words_lstm.h5")
+    str(DEFAULT_MODEL_DIR / "sign_speak_words_lstm_s2.h5")
 )
 WORDS_LABEL_ENCODER_PATH = os.getenv(
     "WORDS_LABEL_ENCODER_PATH",
-    str(DEFAULT_MODEL_DIR / "label_encoder_words.pkl")
+    str(DEFAULT_MODEL_DIR / "label_encoder_words_s2.pkl")
 )
 
 MODE_CONFIGS: Dict[str, Dict[str, str]] = {
