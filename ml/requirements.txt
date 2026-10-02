@@ -6,6 +6,6 @@ scikit-learn>=1.4.0
 matplotlib>=3.8.0
 protobuf<5,>=4.25.3
 python-dotenv>=1.0.0
-mediapipe>=0.10.14
+mediapipe==0.10.21
 opencv-python>=4.8.0
 
