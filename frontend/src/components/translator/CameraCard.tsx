@@ -1,10 +1,61 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { VideoOff, WifiOff } from "lucide-react";
+import { LoaderCircle, SwitchCamera, VideoOff, WifiOff } from "lucide-react";
 import { useTranslatorStore } from "../../store/useTranslatorStore";
 import { isLocalModelAvailable, loadLocalModel, predictLocally, getLocalModelError } from "../../lib/localModel";
 
 const SEQUENCE_LENGTH = 30;
+type CameraFacingMode = "user" | "environment";
+
+const getCameraErrorMessage = (error: unknown): string => {
+  const name = error && typeof error === "object" && "name" in error
+    ? String(error.name)
+    : "";
+
+  if (["NotAllowedError", "PermissionDeniedError", "SecurityError"].includes(name)) {
+    return "Camera permission was denied. Allow camera access in your browser settings, then try again.";
+  }
+  if (["NotFoundError", "DevicesNotFoundError"].includes(name)) {
+    return "No camera was found on this device.";
+  }
+  if (["NotReadableError", "TrackStartError", "AbortError"].includes(name)) {
+    return "The camera is in use by another app or browser tab. Close it there, then try again.";
+  }
+  return "The camera could not start. Check its permissions and availability, then try again.";
+};
+
+const getCameraStream = async (facingMode: CameraFacingMode): Promise<MediaStream> => {
+  const constraints: MediaStreamConstraints[] = [
+    {
+      audio: false,
+      video: {
+        width: { exact: 640 },
+        height: { exact: 480 },
+        facingMode: { exact: facingMode }
+      }
+    },
+    {
+      audio: false,
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: { ideal: facingMode }
+      }
+    },
+    { audio: false, video: true }
+  ];
+
+  let lastError: unknown;
+  for (const constraint of constraints) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraint);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError ?? new Error("Unable to open a camera.");
+};
 
 // The assets in /public/mediapipe are copied from this version of the package;
 // `npm run sync:mediapipe` re-copies them after a dependency bump.
@@ -75,7 +126,8 @@ export const CameraCard: React.FC = () => {
     setCameraFps,
     setApiHealthy,
     setInferenceSource,
-    activeMode
+    activeMode,
+    cameraMirrored
   } = useTranslatorStore();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -85,6 +137,9 @@ export const CameraCard: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const cameraStarting = useRef<boolean>(false);
+  const cameraRequestId = useRef<number>(0);
+  const frameLoopGeneration = useRef<number>(0);
+  const facingModeRef = useRef<CameraFacingMode>("user");
   
   // Pipeline Performance and Stabilization Refs
   const lastPredictionTime = useRef<number>(0);
@@ -113,6 +168,9 @@ export const CameraCard: React.FC = () => {
   const sendInFlight = useRef<boolean>(false);
 
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<CameraFacingMode>("user");
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState<boolean>(false);
+  const [cameraCount, setCameraCount] = useState<number>(0);
 
   // Main frame processing loop ref to resolve accessed-before-declaration warnings
   const processVideoFrameRef = useRef<() => void>(() => {});
@@ -123,6 +181,7 @@ export const CameraCard: React.FC = () => {
   // Update loop callback reference whenever FPS settings updates
   useEffect(() => {
     processVideoFrameRef.current = async () => {
+      const generation = frameLoopGeneration.current;
       if (!streamRef.current || !videoRef.current || !handsRef.current) return;
 
       // A zero-sized frame also faults the WASM decoder.
@@ -170,6 +229,7 @@ export const CameraCard: React.FC = () => {
           sendInFlight.current = false;
         }
       }
+      if (generation !== frameLoopGeneration.current) return;
       animationFrameRef.current = requestAnimationFrame(processVideoFrameRef.current);
     };
   }, [setCameraFps, setStatusBarMessage]);
@@ -423,15 +483,9 @@ export const CameraCard: React.FC = () => {
     const height = canvas.height;
 
     // Read mirroring preference and translating status from Zustand state dynamically
-    const { cameraMirrored, isTranslating } = useTranslatorStore.getState();
+    const { isTranslating } = useTranslatorStore.getState();
 
-    // 1. Draw camera feed with horizontal mirroring option
-    ctx.save();
-    if (cameraMirrored) {
-      ctx.translate(width, 0);
-      ctx.scale(-1, 1);
-    }
-    ctx.drawImage(video, 0, 0, width, height);
+    ctx.clearRect(0, 0, width, height);
 
     // 2. Draw landmarks if detected
     if (results.multiHandLandmarks) {
@@ -439,7 +493,6 @@ export const CameraCard: React.FC = () => {
         drawHandSkeleton(ctx, landmarks);
       }
     }
-    ctx.restore();
 
     // 3. Inference execution logic
     if (isTranslating) {
@@ -508,6 +561,9 @@ export const CameraCard: React.FC = () => {
   }, [activeMode, setStatusBarMessage]);
 
   const stopCameraAndLoop = useCallback(() => {
+    cameraRequestId.current += 1;
+    frameLoopGeneration.current += 1;
+
     // 1. Stop animation loop
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -520,10 +576,11 @@ export const CameraCard: React.FC = () => {
       streamRef.current = null;
     }
     cameraStarting.current = false;
-    sendInFlight.current = false;
     frameErrors.current = 0;
     
     if (videoRef.current) {
+      videoRef.current.onloadedmetadata = null;
+      videoRef.current.pause();
       videoRef.current.srcObject = null;
     }
 
@@ -543,30 +600,55 @@ export const CameraCard: React.FC = () => {
     setCameraFps(0);
   }, [setPrediction, setCameraFps]);
 
-  const startCamera = useCallback(async () => {
+  const refreshCameraCount = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setCameraCount(devices.filter((device) => device.kind === "videoinput").length);
+    } catch {
+      setCameraCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    const mediaDevices = navigator.mediaDevices;
+    mediaDevices?.addEventListener?.("devicechange", refreshCameraCount);
+    return () => mediaDevices?.removeEventListener?.("devicechange", refreshCameraCount);
+  }, [refreshCameraCount]);
+
+  const startCamera = useCallback(async (requestedFacingMode = facingModeRef.current) => {
     // StrictMode runs the activation effect twice; without this the second
     // call opens a second MediaStream, leaks the first, and can fire
     // onloadedmetadata twice.
     if (streamRef.current || cameraStarting.current) return;
 
+    const requestId = ++cameraRequestId.current;
     cameraStarting.current = true;
     setCameraError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          width: { ideal: 640 }, 
-          height: { ideal: 480 },
-          facingMode: "user"
-        },
-        audio: false
-      });
+      const stream = await getCameraStream(requestedFacingMode);
+      if (requestId !== cameraRequestId.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          if (videoRef.current) {
-            videoRef.current.play();
+      const actualFacingMode = stream.getVideoTracks()[0]?.getSettings().facingMode;
+      if (actualFacingMode === "user" || actualFacingMode === "environment") {
+        facingModeRef.current = actualFacingMode;
+        setFacingMode(actualFacingMode);
+      } else {
+        facingModeRef.current = requestedFacingMode;
+        setFacingMode(requestedFacingMode);
+      }
+      void refreshCameraCount();
+
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          if (videoRef.current !== video || streamRef.current !== stream) return;
+          void video.play().then(() => {
+            if (videoRef.current !== video || streamRef.current !== stream) return;
             // Reset FPS counters
             fpsLastTime.current = performance.now();
             fpsFrames.current = 0;
@@ -578,20 +660,43 @@ export const CameraCard: React.FC = () => {
               cancelAnimationFrame(animationFrameRef.current);
             }
             animationFrameRef.current = requestAnimationFrame(processVideoFrameRef.current);
-          }
+          }).catch((error: unknown) => {
+            if (streamRef.current !== stream) return;
+            const message = getCameraErrorMessage(error);
+            setCameraError(message);
+            setStatusBarMessage(message);
+            setWebcamActive(false);
+          });
         };
       }
       setStatusBarMessage("Webcam connected. Feed active.");
-      cameraStarting.current = false;
-    } catch (err: any) {
-      cameraStarting.current = false;
-      console.error("[CameraCard] Webcam access denied or unavailable:", err);
+    } catch (error: unknown) {
+      if (requestId !== cameraRequestId.current) return;
+      console.error("[CameraCard] Webcam access failed:", error);
+      const message = getCameraErrorMessage(error);
       setWebcamActive(false);
-      setCameraError("Permission Denied");
-      setStatusBarMessage("Webcam permission denied or device busy.");
-      alert("Camera access denied. Please grant permission in browser settings.");
+      setCameraError(message);
+      setStatusBarMessage(message);
+    } finally {
+      if (requestId === cameraRequestId.current) cameraStarting.current = false;
     }
-  }, [setWebcamActive, setStatusBarMessage]);
+  }, [refreshCameraCount, setWebcamActive, setStatusBarMessage]);
+
+  const switchCamera = useCallback(async () => {
+    if (!webcamActive || isSwitchingCamera) return;
+
+    const nextFacingMode = facingModeRef.current === "user" ? "environment" : "user";
+    facingModeRef.current = nextFacingMode;
+    setFacingMode(nextFacingMode);
+    setIsSwitchingCamera(true);
+    stopCameraAndLoop();
+
+    try {
+      await startCamera(nextFacingMode);
+    } finally {
+      setIsSwitchingCamera(false);
+    }
+  }, [isSwitchingCamera, startCamera, stopCameraAndLoop, webcamActive]);
 
   // Initialize MediaPipe Hands ONCE on client mount.
   // Uses a stable wrapper ref so the callback can update without re-running this effect.
@@ -682,20 +787,39 @@ export const CameraCard: React.FC = () => {
     <div className="rounded-2xl border border-zinc-900 bg-zinc-950/40 p-1 backdrop-blur-md overflow-hidden aspect-video relative flex flex-col justify-between shadow-2xl min-h-[300px]">
       
       <div className="flex-1 rounded-xl bg-black/60 relative flex flex-col items-center justify-center p-4">
-        
-        {/* Hidden video element for MediaPipe stream feed */}
-        <video 
-          ref={videoRef} 
-          className="hidden" 
-          playsInline 
-          muted 
+
+        <video
+          ref={videoRef}
+          className="absolute inset-0 h-full w-full rounded-xl object-cover"
+          autoPlay
+          playsInline
+          muted
+          style={{ transform: cameraMirrored && facingMode === "user" ? "scaleX(-1)" : undefined }}
         />
         
-        {/* Mirror view overlay drawing canvas */}
-        <canvas 
-          ref={canvasRef} 
-          className="absolute inset-0 w-full h-full rounded-xl object-cover" 
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 h-full w-full rounded-xl object-cover pointer-events-none"
+          style={{ transform: cameraMirrored && facingMode === "user" ? "scaleX(-1)" : undefined }}
         />
+
+        {webcamActive && cameraCount > 1 && (
+          <button
+            type="button"
+            onClick={switchCamera}
+            disabled={isSwitchingCamera}
+            title="Switch camera"
+            aria-label="Switch camera"
+            className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-md border border-white/20 bg-black/75 px-3 py-2 text-xs font-medium text-white shadow-lg transition hover:bg-black disabled:cursor-wait disabled:opacity-60"
+          >
+            {isSwitchingCamera ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <SwitchCamera className="h-4 w-4" aria-hidden="true" />
+            )}
+            {isSwitchingCamera ? "Switching..." : "Switch camera"}
+          </button>
+        )}
 
         {/* Glow overlay */}
         {webcamActive && (
@@ -725,9 +849,9 @@ export const CameraCard: React.FC = () => {
                 <div className="w-16 h-16 rounded-full bg-rose-950/30 border border-rose-500/30 flex items-center justify-center text-rose-400">
                   <WifiOff className="h-7 w-7" />
                 </div>
-                <span className="text-sm font-semibold text-rose-400">Webcam Denied or Busy</span>
+                <span className="text-sm font-semibold text-rose-400">Camera unavailable</span>
                 <span className="text-[11px] text-zinc-500 max-w-[240px] leading-relaxed">
-                  Allow camera permissions in browser settings and reload this page to start.
+                  {cameraError}
                 </span>
               </>
             ) : (
