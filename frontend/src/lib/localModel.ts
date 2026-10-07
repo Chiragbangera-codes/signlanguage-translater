@@ -61,6 +61,20 @@ export function loadLocalModel(mode: string): Promise<LoadedModel> {
 
   const pending = (async (): Promise<LoadedModel> => {
     const tf = await import("@tensorflow/tfjs");
+    // Fastest backend for this small LSTM: WebAssembly (falls back to CPU).
+    if (tf.getBackend() !== "wasm") {
+      let ok = false;
+      try {
+        const wasm = await import("@tensorflow/tfjs-backend-wasm");
+        wasm.setWasmPaths("/tfjs-wasm/");
+        ok = await tf.setBackend("wasm");
+      } catch (e) {
+        console.warn("[SignSpeak] WASM backend unavailable:", e);
+      }
+      if (!ok) await tf.setBackend("cpu");
+      await tf.ready();
+    }
+    console.info("[SignSpeak] TF.js backend:", tf.getBackend());
     const [members, labels] = await Promise.all([fetchMembers(mode), fetchLabels(mode)]);
     const models = await Promise.all(
       members.map((file) => tf.loadLayersModel(`/model/${mode}/${file}`))
