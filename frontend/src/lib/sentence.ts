@@ -21,8 +21,12 @@ export class SentenceApiError extends Error {
   }
 }
 
-function apiBase(): string {
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+// With NEXT_PUBLIC_API_URL set (e.g. local FastAPI backend) the sentence
+// request goes there; otherwise it uses the app's own /api/sentence route,
+// which is what the deployed (Vercel) app uses.
+function sentenceUrl(): string {
+  const base = process.env.NEXT_PUBLIC_API_URL;
+  return base ? `${base.replace(/\/$/, "")}/sentence` : "/api/sentence";
 }
 
 export async function requestSentence(
@@ -44,7 +48,7 @@ export async function requestSentence(
 
   let response: Response;
   try {
-    response = await fetch(`${apiBase()}/sentence`, {
+    response = await fetch(sentenceUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
