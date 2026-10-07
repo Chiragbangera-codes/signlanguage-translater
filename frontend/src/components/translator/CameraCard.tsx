@@ -67,7 +67,7 @@ const MAX_CONSECUTIVE_FRAME_ERRORS = 10;
 
 // In-browser inference costs a few milliseconds, so it can run near frame
 // rate. The remote path still needs throttling — each call ships ~80KB.
-const LOCAL_MIN_INTERVAL_MS = 60;
+const LOCAL_MIN_INTERVAL_MS = 150;
 const REMOTE_MIN_INTERVAL_MS = 200;
 
 // Draw hand joints & connection lines in canvas context (declared outside to remain pure)
@@ -736,7 +736,7 @@ export const CameraCard: React.FC = () => {
           // flip uses_two_hands to 1.0 — an input the model has never seen.
           // Tracking one hand is also cheaper per frame.
           maxNumHands: 1,
-          modelComplexity: 1,
+          modelComplexity: 0,
           minDetectionConfidence: 0.6,
           minTrackingConfidence: 0.6
         });
