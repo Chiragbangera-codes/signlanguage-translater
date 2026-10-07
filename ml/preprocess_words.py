@@ -32,6 +32,39 @@ PREPROCESSED_DATA_PATH = os.path.join(
 
 
 # ============================================================
+# FEATURE OPTIONS  (the app must use the same settings)
+# ============================================================
+
+# Copy the nearest detected hand into frames where no hand was found.
+# Measured on the LSTM: no gain (82.4% with vs 82.9% without), so OFF.
+USE_FILL = False
+
+# Append the raw wrist x, y (image position, 0-1) of hand slot A to every
+# frame: 127 -> 129 features. Normalisation removes WHERE the hand is, so
+# signs made at different places (forehead / chin / chest) look alike.
+ADD_WRIST = True
+
+
+def fill_missing_frames(sequence: np.ndarray) -> np.ndarray:
+    """
+    Replace frames where no hand was detected (feature 1 == -1.0)
+    with the nearest earlier frame that had a hand. Frames before the
+    first detected hand copy that first hand. A sequence with no hand
+    at all is returned unchanged.
+    """
+    seq = sequence.copy()
+    present = ~np.isclose(seq[:, 1], -1.0)
+
+    if not present.any():
+        return seq
+
+    idx = np.where(present, np.arange(len(seq)), -1)
+    np.maximum.accumulate(idx, out=idx)
+    idx[idx < 0] = np.argmax(present)
+    return seq[idx]
+
+
+# ============================================================
 # NORMALIZE SINGLE HAND
 # ============================================================
 
@@ -172,10 +205,12 @@ def load_sequence_dataset(path: str = DATASET_PATH):
 # ============================================================
 
 def preprocess_features(
-    sequences: np.ndarray
+    sequences: np.ndarray,
+    use_fill: bool = USE_FILL,
+    add_wrist: bool = ADD_WRIST,
 ) -> np.ndarray:
 
-    print("\nNormalizing hand landmarks...")
+    print(f"\nNormalizing hand landmarks... (fill={use_fill}, wrist={add_wrist})")
 
     if sequences.ndim != 3 or sequences.shape[2] != 127:
 
@@ -188,6 +223,14 @@ def preprocess_features(
         np.float32,
         copy=True
     )
+
+    if use_fill:
+        for sample_index in range(len(processed)):
+            processed[sample_index] = fill_missing_frames(processed[sample_index])
+
+    # Raw wrist x, y of hand slot A, saved BEFORE normalisation moves every
+    # wrist to the origin. Missing hands stay -1.0.
+    wrist_xy = processed[:, :, 1:3].copy()
 
     # Process every sample
     for sample_index, sequence in enumerate(processed):
@@ -210,7 +253,10 @@ def preprocess_features(
                 frame_index
             ] = frame
 
-    print("Normalization completed.")
+    if add_wrist:
+        processed = np.concatenate([processed, wrist_xy], axis=-1)
+
+    print(f"Normalization completed. Feature shape: {processed.shape}")
 
     return processed
 

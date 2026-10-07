@@ -79,4 +79,15 @@ describe("normalizeSequence", () => {
       expect(out[1 + COORDS_PER_HAND + i]).toBe(MISSING);
     }
   });
+  it("fills a frame with no hand from the previous frame", () => {
+    const hand = new Array(FEATURES_PER_FRAME).fill(MISSING);
+    hand[0] = 0.0;
+    for (let i = 0; i < COORDS_PER_HAND; i++) hand[1 + i] = 0.1 * ((i % 3) + 1) + i * 0.01;
+    const empty = new Array(FEATURES_PER_FRAME).fill(MISSING);
+    empty[0] = 0.0;
+    const out = normalizeSequence([hand, empty], true);
+    for (let i = 1; i < 1 + COORDS_PER_HAND; i++) {
+      expect(out[FEATURES_PER_FRAME + i]).toBeCloseTo(out[i], 6);
+    }
+  });
 });

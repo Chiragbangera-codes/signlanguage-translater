@@ -88,9 +88,17 @@ async def predict_gesture(payload: PredictionRequest):
                 ),
             )
 
+        # Raw wrist x, y of hand slot A, saved BEFORE normalisation
+        # (must match ADD_WRIST in ml/preprocess_words.py)
+        wrist_xy = sequence_input[:, 1:3].copy()
+
         # Normalize all frames in the sequence using vectorized NumPy operations
         sequence_input[:, 1:64] = normalize_hands_batch(sequence_input[:, 1:64])
         sequence_input[:, 64:127] = normalize_hands_batch(sequence_input[:, 64:127])
+
+        # Words model uses 129 features: 127 landmarks + wrist x, y
+        if mode == "words":
+            sequence_input = np.concatenate([sequence_input, wrist_xy], axis=1)
 
         probs = model_loader.predict(sequence_input, mode=mode)
 
